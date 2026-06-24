@@ -1,7 +1,7 @@
 ﻿using CMK.ExtendedBitmap;
 using SkiaSharp;
 
-namespace CMK.SkiaBitmapFactory
+namespace AnimatedPngCreator.SkiaSharp
 {
     public class BitmapWrapper : IBitmap, IDisposable
     {
@@ -60,8 +60,8 @@ namespace CMK.SkiaBitmapFactory
     {
         static BitmapFactory()
         {
-            ExtendedBitmap.BitmapFactory._Create = (uint x, uint y) => new BitmapWrapper(x, y);
-            ExtendedBitmap.BitmapFactory._FromFile = (string filePath) => new BitmapWrapper(SKBitmap.Decode(filePath));
+            CMK.ExtendedBitmap.BitmapFactory._Create = (uint x, uint y) => new BitmapWrapper(x, y);
+            CMK.ExtendedBitmap.BitmapFactory._FromFile = (string filePath) => new BitmapWrapper(SKBitmap.Decode(filePath));
         }
     }
 }

@@ -1,27 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.5.33424.131
+# Visual Studio Version 18
+VisualStudioVersion = 18.4.11626.88
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AnimatedPngCreator.Console", "AnimatedPngCreator.Console\AnimatedPngCreator.Console.csproj", "{D0489B7D-6897-4A45-A843-5C74A9D6D919}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AnimatedPngCreator.Tests", "AnimatedPngCreator.Tests\AnimatedPngCreator.Tests.csproj", "{92062A22-A22B-4BCD-99BF-1AA2659C2263}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ExtendedBitmap", "ExtendedBitmap\ExtendedBitmap.csproj", "{D55D0C19-3744-4C18-A6F5-93A5B6D7917C}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemDrawingBitmapFactoryFramework", "SystemDrawingBitmapFactoryFramework\SystemDrawingBitmapFactoryFramework.csproj", "{843E25C3-23DC-4970-9709-648B967E84D8}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AnimatedPngCreatorBase", "AnimatedPngCreatorBase\AnimatedPngCreatorBase.csproj", "{E96E109C-B75F-4250-AD2E-00C169FB7921}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemDrawingBitmapFactoryCore", "SystemDrawingBitmapFactoryCore\SystemDrawingBitmapFactoryCore.csproj", "{AA7805FA-5705-7502-547B-5EEBD4DE417B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AnimatedPngCreator.ConsoleCore", "AnimatedPngCreator.ConsoleCore\AnimatedPngCreator.ConsoleCore.csproj", "{961A511C-36EE-41AC-A6B5-3641C8858D64}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AnimatedPngCreator.SkiaSharp", "SkiaBitmapFactory\AnimatedPngCreator.SkiaSharp.csproj", "{68C1292E-5A7B-4B67-B34F-21358AF24E95}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AnimatedPngCreator", "AnimatedPngCreator\AnimatedPngCreator.csproj", "{1812D5D9-7E25-4DC4-B0CD-7A518D0A89A8}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AnimatedPngCreator.System.Drawing", "AnimatedPngCreator.System.Drawing\AnimatedPngCreator.System.Drawing.csproj", "{0023A741-7060-40DA-9BCB-73D21A81377B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsoleTest", "ConsoleTest\ConsoleTest.csproj", "{E68B4E9B-B582-46BE-9304-2930B643EBC8}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -29,22 +15,6 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{D0489B7D-6897-4A45-A843-5C74A9D6D919}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D0489B7D-6897-4A45-A843-5C74A9D6D919}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D0489B7D-6897-4A45-A843-5C74A9D6D919}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D0489B7D-6897-4A45-A843-5C74A9D6D919}.Release|Any CPU.Build.0 = Release|Any CPU
-		{92062A22-A22B-4BCD-99BF-1AA2659C2263}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{92062A22-A22B-4BCD-99BF-1AA2659C2263}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{92062A22-A22B-4BCD-99BF-1AA2659C2263}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{92062A22-A22B-4BCD-99BF-1AA2659C2263}.Release|Any CPU.Build.0 = Release|Any CPU
-		{D55D0C19-3744-4C18-A6F5-93A5B6D7917C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D55D0C19-3744-4C18-A6F5-93A5B6D7917C}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D55D0C19-3744-4C18-A6F5-93A5B6D7917C}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D55D0C19-3744-4C18-A6F5-93A5B6D7917C}.Release|Any CPU.Build.0 = Release|Any CPU
-		{843E25C3-23DC-4970-9709-648B967E84D8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{843E25C3-23DC-4970-9709-648B967E84D8}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{843E25C3-23DC-4970-9709-648B967E84D8}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{843E25C3-23DC-4970-9709-648B967E84D8}.Release|Any CPU.Build.0 = Release|Any CPU
 		{E96E109C-B75F-4250-AD2E-00C169FB7921}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{E96E109C-B75F-4250-AD2E-00C169FB7921}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E96E109C-B75F-4250-AD2E-00C169FB7921}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -53,22 +23,10 @@ Global
 		{AA7805FA-5705-7502-547B-5EEBD4DE417B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{AA7805FA-5705-7502-547B-5EEBD4DE417B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{AA7805FA-5705-7502-547B-5EEBD4DE417B}.Release|Any CPU.Build.0 = Release|Any CPU
-		{961A511C-36EE-41AC-A6B5-3641C8858D64}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{961A511C-36EE-41AC-A6B5-3641C8858D64}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{961A511C-36EE-41AC-A6B5-3641C8858D64}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{961A511C-36EE-41AC-A6B5-3641C8858D64}.Release|Any CPU.Build.0 = Release|Any CPU
-		{68C1292E-5A7B-4B67-B34F-21358AF24E95}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{68C1292E-5A7B-4B67-B34F-21358AF24E95}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{68C1292E-5A7B-4B67-B34F-21358AF24E95}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{68C1292E-5A7B-4B67-B34F-21358AF24E95}.Release|Any CPU.Build.0 = Release|Any CPU
-		{1812D5D9-7E25-4DC4-B0CD-7A518D0A89A8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{1812D5D9-7E25-4DC4-B0CD-7A518D0A89A8}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{1812D5D9-7E25-4DC4-B0CD-7A518D0A89A8}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{1812D5D9-7E25-4DC4-B0CD-7A518D0A89A8}.Release|Any CPU.Build.0 = Release|Any CPU
-		{0023A741-7060-40DA-9BCB-73D21A81377B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{0023A741-7060-40DA-9BCB-73D21A81377B}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{0023A741-7060-40DA-9BCB-73D21A81377B}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{0023A741-7060-40DA-9BCB-73D21A81377B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E68B4E9B-B582-46BE-9304-2930B643EBC8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E68B4E9B-B582-46BE-9304-2930B643EBC8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E68B4E9B-B582-46BE-9304-2930B643EBC8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E68B4E9B-B582-46BE-9304-2930B643EBC8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

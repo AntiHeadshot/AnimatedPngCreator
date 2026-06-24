@@ -1,9 +1,9 @@
-﻿using CMK.ExtendedBitmap;
-using System.Drawing;
+﻿using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
+using CMK.ExtendedBitmap;
 
-namespace CMK.SystemDrawingBitmapFactoryCore
+namespace SystemDrawingBitmapFactoryCore
 {
     public class BitmapWrapper : IBitmap
     {

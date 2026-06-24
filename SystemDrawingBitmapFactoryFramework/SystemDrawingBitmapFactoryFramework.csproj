@@ -51,13 +51,13 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\ExtendedBitmap\ExtendedBitmap.csproj">
-      <Project>{d55d0c19-3744-4c18-a6f5-93a5b6d7917c}</Project>
-      <Name>ExtendedBitmap</Name>
-    </ProjectReference>
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="packages.config" />
+    <ProjectReference Include="..\AnimatedPngCreatorBase\AnimatedPngCreatorBase.csproj">
+      <Project>{e96e109c-b75f-4250-ad2e-00c169fb7921}</Project>
+      <Name>AnimatedPngCreatorBase</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

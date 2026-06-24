@@ -1,12 +1,11 @@
-﻿using CMK.ExtendedBitmap;
-using System;
-using System.Drawing.Imaging;
+﻿using System;
 using System.Drawing;
-using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.ComTypes;
+using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
+using AnimatedPngCreatorBase;
 
-namespace CMK.SystemDrawingBitmapFactoryFramework
+namespace SystemDrawingBitmapFactoryFramework
 {
     public class BitmapWrapper : IBitmap
     {
@@ -67,8 +66,8 @@ namespace CMK.SystemDrawingBitmapFactoryFramework
     {
         static BitmapFactory()
         {
-            ExtendedBitmap.BitmapFactory._Create = (uint x, uint y) => new BitmapWrapper(x, y);
-            ExtendedBitmap.BitmapFactory._FromFile = (string filePath) => new BitmapWrapper((Bitmap)Image.FromFile(filePath));
+            AnimatedPngCreatorBase.BitmapFactory._Create = (uint x, uint y) => new BitmapWrapper(x, y);
+            AnimatedPngCreatorBase.BitmapFactory._FromFile = (string filePath) => new BitmapWrapper((Bitmap)Image.FromFile(filePath));
         }
     }
 }

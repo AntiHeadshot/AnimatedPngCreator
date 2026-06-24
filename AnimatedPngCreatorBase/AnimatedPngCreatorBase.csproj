@@ -1,13 +1,12 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <LangVersion>8.0</LangVersion>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\ExtendedBitmap\ExtendedBitmap.csproj" />
-  </ItemGroup>
+	  <OutputType>Library</OutputType>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
 
 </Project>
