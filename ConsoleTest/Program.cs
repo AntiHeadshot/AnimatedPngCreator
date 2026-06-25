@@ -32,10 +32,10 @@ foreach (IGrouping<string, string> group in Directory.GetFiles(@"H:\Projects\peb
         images.Add(new Png(s));
     }
 
-    Png.CheckCrc = true;
 
     Png emptyImg = new(images.First().Width, images.First().Height, ColorType.Greyscale, 2, Colors.Black)
     {
+        CheckCrc = false,
         DefaultDelayInSeconds = 1,
         StripDecoration = true
     };

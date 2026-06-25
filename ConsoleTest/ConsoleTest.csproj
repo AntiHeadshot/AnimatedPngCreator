@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\AnimatedPngCreatorBase\AntiPng.csproj" />
+    <ProjectReference Include="..\AntiPng\AntiPng.csproj" />
   </ItemGroup>
 
 </Project>

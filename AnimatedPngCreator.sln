@@ -3,9 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.4.11626.88
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AntiPng", "AnimatedPngCreatorBase\AntiPng.csproj", "{E96E109C-B75F-4250-AD2E-00C169FB7921}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SystemDrawingBitmapFactoryCore", "SystemDrawingBitmapFactoryCore\SystemDrawingBitmapFactoryCore.csproj", "{AA7805FA-5705-7502-547B-5EEBD4DE417B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AntiPng", "AntiPng\AntiPng.csproj", "{E96E109C-B75F-4250-AD2E-00C169FB7921}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsoleTest", "ConsoleTest\ConsoleTest.csproj", "{E68B4E9B-B582-46BE-9304-2930B643EBC8}"
 EndProject
@@ -19,10 +17,6 @@ Global
 		{E96E109C-B75F-4250-AD2E-00C169FB7921}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E96E109C-B75F-4250-AD2E-00C169FB7921}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E96E109C-B75F-4250-AD2E-00C169FB7921}.Release|Any CPU.Build.0 = Release|Any CPU
-		{AA7805FA-5705-7502-547B-5EEBD4DE417B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{AA7805FA-5705-7502-547B-5EEBD4DE417B}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{AA7805FA-5705-7502-547B-5EEBD4DE417B}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{AA7805FA-5705-7502-547B-5EEBD4DE417B}.Release|Any CPU.Build.0 = Release|Any CPU
 		{E68B4E9B-B582-46BE-9304-2930B643EBC8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{E68B4E9B-B582-46BE-9304-2930B643EBC8}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E68B4E9B-B582-46BE-9304-2930B643EBC8}.Release|Any CPU.ActiveCfg = Release|Any CPU
