@@ -9,7 +9,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\AnimatedPngCreatorBase\AnimatedPngCreatorBase.csproj" />
+    <PackageReference Include="SkiaSharp" Version="4.148.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AnimatedPngCreatorBase\AntiPng.csproj" />
   </ItemGroup>
 
 </Project>

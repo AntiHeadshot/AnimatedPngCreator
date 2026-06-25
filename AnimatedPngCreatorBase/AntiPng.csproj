@@ -9,4 +9,8 @@
     <TargetFramework>net8.0</TargetFramework>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="4.148.0" />
+  </ItemGroup>
+
 </Project>
