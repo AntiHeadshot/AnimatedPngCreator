@@ -6,8 +6,8 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 
 namespace AntiPebbleNG;
@@ -15,8 +15,12 @@ namespace AntiPebbleNG;
 internal static class AntiPebbleNGData
 {
     internal static readonly Dictionary<string, Type> ChunkTypesByName = typeof(AbstractChunk).Assembly.GetTypes()
-        .Where(x => x != typeof(AbstractChunk) && typeof(AbstractChunk).IsAssignableFrom(x))
-        .ToDictionary(x => x.GetCustomAttribute<ChunkAttribute>().Name, x => x);
+        .Select(x => (x, x.GetCustomAttribute<ChunkAttribute>())).Where(x => x.Item2 != null)
+        .ToDictionary(x => x.Item2.Name, x => x.x);
+
+    internal static readonly Dictionary<ColorType, Dictionary<byte, Type>> ColorByConfiguration = typeof(IColor).Assembly.GetTypes()
+        .Select(x => (x, x.GetCustomAttribute<ColorAttribute>())).Where(x => x.Item2 != null)
+        .GroupBy(x => x.Item2.ColorType).ToDictionary(x => x.Key, x => x.ToDictionary(y => y.Item2.BitDepth, y => y.x));
 }
 
 public class Png
@@ -30,61 +34,14 @@ public class Png
     public float DefaultDelayInSeconds
     {
         get => (float)_defaultNum / _defaultDen;
-        set
-        {
-            if (float.IsNaN(value) || float.IsInfinity(value))
-                throw new ArgumentException("Value must be a finite number.");
-
-            if (value <= 0)
-            {
-                _defaultNum = 0;
-                _defaultDen = 1;
-                return;
-            }
-
-            // Continued fraction expansion
-            const int max = ushort.MaxValue;
-
-            int a0 = (int)Math.Floor(value);
-            if (a0 > max)
-            {
-                _defaultNum = max;
-                _defaultDen = 1;
-                return;
-            }
-
-            int n0 = 1, d0 = 0; // previous convergent
-            int n1 = a0, d1 = 1; // current convergent
-
-            double frac = value - a0;
-
-            while (frac > 0)
-            {
-                frac = 1.0 / frac;
-                int a = (int)Math.Floor(frac);
-
-                int n2 = a * n1 + n0;
-                int d2 = a * d1 + d0;
-
-                if (n2 > max || d2 > max)
-                    break;
-
-                n0 = n1; d0 = d1;
-                n1 = n2; d1 = d2;
-
-                frac -= a;
-            }
-
-            _defaultNum = (ushort)n1;
-            _defaultDen = (ushort)d1;
-        }
+        set => Maths.ExpandFraction(value, out _defaultNum, out _defaultDen);
     }
 
-    public UInt32 Width { get; private set; }
-    public UInt32 Height { get; private set; }
+    public uint Width { get; private set; }
+    public uint Height { get; private set; }
 
-    private UInt16 _defaultNum = 1;
-    private UInt16 _defaultDen = 100;
+    private ushort _defaultNum = 1;
+    private ushort _defaultDen = 100;
 
     public bool StripDecoration = false;
 
@@ -103,11 +60,12 @@ public class Png
 
     public Png(byte[] data)
     {
-        Load(data);
+        using MemoryStream ms = new(data);
+        Load(ms);
         Init();
     }
 
-    public Png(UInt32 width, UInt32 height, ColorType colorType = ColorType.TruecolorWithAlpha, byte bitDepth = 8, IColor? color = null)
+    public Png(uint width, uint height, ColorType colorType = ColorType.TruecolorWithAlpha, byte bitDepth = 8, IColor? color = null)
     {
         color ??= Colors.Black;
 
@@ -160,50 +118,12 @@ public class Png
 
     private static Image GetImage(int width, int height, byte[] data, byte bitDepth, ColorType colorType)
     {
-        return colorType switch
-        {
-            ColorType.Greyscale =>
-                bitDepth switch
-                {
-                    1 => new Image<ColorGray1>(width, height, data),
-                    2 => new Image<ColorGray2>(width, height, data),
-                    4 => new Image<ColorGray4>(width, height, data),
-                    8 => new Image<ColorGray8>(width, height, data),
-                    16 => new Image<ColorGray16>(width, height, data),
-                    _ => throw new ArgumentOutOfRangeException(nameof(bitDepth), bitDepth, null)
-                },
-            ColorType.Truecolor =>
-                bitDepth switch
-                {
-                    8 => new Image<ColorRgb8>(width, height, data),
-                    16 => new Image<ColorRgb16>(width, height, data),
-                    _ => throw new ArgumentOutOfRangeException(nameof(bitDepth), bitDepth, null)
-                },
-            ColorType.IndexedColor =>
-                bitDepth switch
-                {
-                    1 => new Image<ColorIndexed1>(width, height, data),
-                    2 => new Image<ColorIndexed2>(width, height, data),
-                    4 => new Image<ColorIndexed4>(width, height, data),
-                    8 => new Image<ColorIndexed8>(width, height, data),
-                    _ => throw new ArgumentOutOfRangeException(nameof(bitDepth), bitDepth, null)
-                },
-            ColorType.GreyscaleWithAlpha =>
-                bitDepth switch
-                {
-                    8 => new Image<ColorGrayAlpha8>(width, height, data),
-                    16 => new Image<ColorGrayAlpha16>(width, height, data),
-                    _ => throw new ArgumentOutOfRangeException(nameof(bitDepth), bitDepth, null)
-                },
-            ColorType.TruecolorWithAlpha =>
-                bitDepth switch
-                {
-                    8 => new Image<ColorRgba8>(width, height, data),
-                    16 => new Image<ColorRgba16>(width, height, data),
-                    _ => throw new ArgumentOutOfRangeException(nameof(bitDepth), bitDepth, null)
-                },
-            _ => throw new ArgumentOutOfRangeException(nameof(colorType), colorType, null)
-        };
+        if (!AntiPebbleNGData.ColorByConfiguration.TryGetValue(colorType, out Dictionary<byte, Type> byBitDepth)
+           || !byBitDepth.TryGetValue(bitDepth, out Type type))
+            throw new ArgumentOutOfRangeException(nameof(bitDepth), bitDepth, null);
+        Type imageType = typeof(Image<>).MakeGenericType(type);
+
+        return (Image)Activator.CreateInstance(imageType, width, height, data);
     }
 
     private static byte[] Unpack(byte[] packed, byte bitsPerPixel, int width, int height)
@@ -293,21 +213,6 @@ public class Png
             throw new FormatException("No PNG file loaded. Unexpected data at end.");
     }
 
-    private void Load(Span<byte> data)
-    {
-        for (int i = 0; i < Signature.Length; i++)
-            if (Signature[i] != data[i])
-                throw new FormatException("No PNG data loaded. Signature mismatch.");
-        data = data[Signature.Length..];
-        long minSize = Marshal.SizeOf(typeof(ChunkStart)) + 4;
-
-        do data = LoadChunk(data);
-        while (data.Length >= minSize);
-
-        if (data.Length > 0)
-            throw new FormatException("No PNG file loaded. Unexpected data at end.");
-    }
-
     private void LoadChunk(Stream stream)
     {
         long streamStart = stream.Position;
@@ -321,38 +226,19 @@ public class Png
 
         if (CheckCrc)
         {
-            stream.Seek(streamStart + sizeof(UInt32), SeekOrigin.Begin);
+            stream.Seek(streamStart + sizeof(uint), SeekOrigin.Begin);
             // ReSharper disable once MustUseReturnValue : Can not happen here, because then the previous read would have failed.
             stream.Read(chunk, 0, chunk.Length);
-            stream.Position += sizeof(UInt32);
+            stream.Position += sizeof(uint);
             long crcCalc = Crc.Get(chunk);
             if (crc != crcCalc)
                 throw new Exception($"Corrupt PNG file loaded. Wrong CRC in chunk {_chunks.Count - 1}. Expected {crcCalc:x8}, found {crc:x8}");
         }
     }
 
-    private Span<byte> LoadChunk(Span<byte> data)
-    {
-        ChunkStart start = new(data);
-        Span<byte> chunk = data[ChunkStart.ObjectSize..(int)(ChunkStart.ObjectSize + start.Size + 4)];
-        data = data[4..];
-        if (chunk.Length < start.Size)
-            throw new FormatException($"Corrupt PNG file loaded. Malformed chunk Nr. {_chunks.Count}");
-
-        uint crc = LoadChunk(start.Name, chunk);
-        if (CheckCrc)
-        {
-            long crcCalc = Crc.Get(data[..(int)(start.Size + 4)]);
-            if (crc != crcCalc)
-                throw new Exception($"Corrupt PNG file loaded. Wrong CRC in chunk {_chunks.Count - 1}. Expected {crcCalc:x8}, found {crc:x8}");
-        }
-
-        return data[(int)(start.Size + 8)..];
-    }
-
     private uint LoadChunk(string chunkName, Span<byte> chunk)
     {
-        Type t = AntiPebbleNGData.ChunkTypesByName.TryGetValue(chunkName, out Type? type) ? type : AntiPebbleNGData.ChunkTypesByName[""];
+        Type t = AntiPebbleNGData.ChunkTypesByName.TryGetValue(chunkName, out Type? type) ? type : typeof(UnknownChunk);
 
         if (!typeof(AbstractChunk).IsAssignableFrom(t))
             throw new InvalidOperationException("Only Classes inheriting IChunkData can be loaded.");
@@ -436,7 +322,7 @@ public class Png
 
         orderedChunks.InsertRange(orderedChunks.Count - 1, _chunks);
 
-        UInt32 id = 0;
+        uint id = 0;
         foreach ((FdatChunk? fdat, FctlChunk? fctl) in orderedChunks.OfType<FdatChunk, FctlChunk>())
         {
             if (fdat != null) fdat.SequenceNumber = id++;
@@ -444,7 +330,7 @@ public class Png
         }
 
         ActlChunk actl = orderedChunks.First<ActlChunk>();
-        actl.NumFrames = (UInt32)orderedChunks.OfType<FctlChunk>().Count();
+        actl.NumFrames = (uint)orderedChunks.OfType<FctlChunk>().Count();
         if (actl.NumFrames < 2)
             orderedChunks.Remove(actl);
 
@@ -538,14 +424,14 @@ public abstract class AbstractChunk
 
     protected AbstractChunk()
     {
-        ChunkName = GetType().GetCustomAttribute<ChunkAttribute>().Name;
+        ChunkName = GetType().GetCustomAttribute<ChunkAttribute>()?.Name ?? "";
     }
 
     public void Save(Stream stream)
     {
         Span<byte> name = ChunkName.Write();
         Span<byte> data = this.Write();
-        stream.Write(((UInt32)data.Length).Write());
+        stream.Write(((uint)data.Length).Write());
         stream.Write(name);
         stream.Write(data);
         stream.Write(Crc.Get([.. name, .. data]).Write());
@@ -691,12 +577,12 @@ internal static class SpanExtension
 
         Span<byte> valueBytes = (Type.GetTypeCode(type) switch
         {
-            TypeCode.UInt16 => BitConverter.GetBytes((UInt16)obj),
-            TypeCode.UInt32 => BitConverter.GetBytes((UInt32)obj),
-            TypeCode.UInt64 => BitConverter.GetBytes((UInt64)obj),
-            TypeCode.Int16 => BitConverter.GetBytes((Int16)obj),
-            TypeCode.Int32 => BitConverter.GetBytes((Int32)obj),
-            TypeCode.Int64 => BitConverter.GetBytes((Int64)obj),
+            TypeCode.UInt16 => BitConverter.GetBytes((ushort)obj),
+            TypeCode.UInt32 => BitConverter.GetBytes((uint)obj),
+            TypeCode.UInt64 => BitConverter.GetBytes((ulong)obj),
+            TypeCode.Int16 => BitConverter.GetBytes((short)obj),
+            TypeCode.Int32 => BitConverter.GetBytes((int)obj),
+            TypeCode.Int64 => BitConverter.GetBytes((long)obj),
             TypeCode.Byte => [(byte)obj],
             _ => throw new ArgumentException($"Cant handle {type.Name}.")
         }).AsSpan();
@@ -753,6 +639,13 @@ public class PlteChunk : AbstractChunk
     public PalletColor[] Colors = null!;
 }
 
+public readonly struct PalletColor : IColor
+{
+    public readonly byte R;
+    public readonly byte G;
+    public readonly byte B;
+}
+
 [Chunk("IDAT")]
 public class IdatChunk : AbstractChunk
 {
@@ -766,20 +659,20 @@ public class IendChunk : AbstractChunk
 [Chunk("acTL")]
 public class ActlChunk : AbstractChunk
 {
-    public UInt32 NumFrames;
-    public UInt32 NumPlays;
+    public uint NumFrames;
+    public uint NumPlays;
 }
 
 [Chunk("fcTL")]
 public class FctlChunk : AbstractChunk
 {
-    public UInt32 SequenceNumber;
-    public UInt32 Width;
-    public UInt32 Height;
-    public UInt32 XOffset;
-    public UInt32 YOffset;
-    public UInt16 DelayNum;
-    public UInt16 DelayDen;
+    public uint SequenceNumber;
+    public uint Width;
+    public uint Height;
+    public uint XOffset;
+    public uint YOffset;
+    public ushort DelayNum;
+    public ushort DelayDen;
     public DisposeOp DisposeOp;
     public BlendOp BlendOp;
 }
@@ -800,7 +693,7 @@ public enum BlendOp : byte
 [Chunk("fdAT")]
 public class FdatChunk : AbstractChunk
 {
-    public UInt32 SequenceNumber;
+    public uint SequenceNumber;
     public byte[] FrameData = null!;
 }
 
@@ -825,7 +718,6 @@ public class BkgdChunk : AbstractChunk
     public byte[] ColorData = null!;
 }
 
-[Chunk("")]
 public class UnknownChunk : AbstractChunk
 {
     internal UnknownChunk() { }
@@ -879,7 +771,7 @@ public abstract class Image(in int width, in int height)
     }
 }
 
-public class Image<TColor>(int width, int height, Span<byte> data) : Image(width, height)
+public class Image<TColor>(int width, int height, byte[] data) : Image(width, height)
     where TColor : struct, IColor
 {
     private readonly TColor[] _data = MemoryMarshal.Cast<byte, TColor>(data).ToArray();
@@ -909,8 +801,6 @@ public static class ColorExtension
     public static IColor ConvertTo(this IColor color, ColorType colorType, byte bitDepth)
     {
         if (color is ColorRgba16 rgba)
-#pragma warning disable CS8524 // The switch expression does not handle some values of its input type (it is not exhaustive) involving an unnamed enum value.
-#pragma warning disable CS8509 // The switch expression does not handle all possible values of its input type (it is not exhaustive).
             return colorType switch
             {
                 ColorType.Greyscale =>
@@ -920,13 +810,15 @@ public static class ColorExtension
                         2 => new ColorGray2((byte)((rgba.R + rgba.G + rgba.B) / (3 * 0x4000))),
                         4 => new ColorGray4((byte)((rgba.R + rgba.G + rgba.B) / (3 * 0x1000))),
                         8 => new ColorGray8((byte)((rgba.R + rgba.G + rgba.B) / (3 * 256))),
-                        16 => new ColorGray16((UInt16)((rgba.R + rgba.G + rgba.B) / 3))
+                        16 => new ColorGray16((ushort)((rgba.R + rgba.G + rgba.B) / 3)),
+                        _ => throw new InvalidOperationException("This is not a valid ColorType, bitDepth combination.")
                     },
                 ColorType.Truecolor =>
                     bitDepth switch
                     {
                         8 => new ColorRgb8((byte)(rgba.R / 256), (byte)(rgba.G / 256), (byte)(rgba.B / 256)),
-                        16 => new ColorRgb16(rgba.R, rgba.G, rgba.B)
+                        16 => new ColorRgb16(rgba.R, rgba.G, rgba.B),
+                        _ => throw new InvalidOperationException("This is not a valid ColorType, bitDepth combination.")
                     },
                 ColorType.IndexedColor =>
                     //TODO ... somehow pass in the palette
@@ -935,74 +827,86 @@ public static class ColorExtension
                     bitDepth switch
                     {
                         8 => new ColorGrayAlpha8((byte)((rgba.R + rgba.G + rgba.B) / (3 * 256)), (byte)(rgba.A / 256)),
-                        16 => new ColorGrayAlpha16((UInt16)((rgba.R + rgba.G + rgba.B) / 3), rgba.A)
+                        16 => new ColorGrayAlpha16((ushort)((rgba.R + rgba.G + rgba.B) / 3), rgba.A),
+                        _ => throw new InvalidOperationException("This is not a valid ColorType, bitDepth combination.")
                     },
                 ColorType.TruecolorWithAlpha =>
                     bitDepth switch
                     {
                         8 => new ColorRgba8((byte)(rgba.R / 256), (byte)(rgba.G / 256), (byte)(rgba.B / 256), (byte)(rgba.A / 256)),
                         16 => rgba,
+                        _ => throw new InvalidOperationException("This is not a valid ColorType, bitDepth combination.")
                     },
+                _ => throw new InvalidOperationException("This is not a valid ColorType")
             };
-#pragma warning restore CS8524 // The switch expression does not handle some values of its input type (it is not exhaustive) involving an unnamed enum value.
-#pragma warning restore CS8509 // The switch expression does not handle all possible values of its input type (it is not exhaustive).
 
         //Convert all to RGBA because it is most expressive.
         return (color switch
         {
-            ColorGray1 c => new ColorRgba16((UInt16)(c.Value * 0x8000), (UInt16)(c.Value * 0x8000), (UInt16)(c.Value * 0x8000), UInt16.MaxValue),
-            ColorGray2 c => new ColorRgba16((UInt16)(c.Value * 0x4000), (UInt16)(c.Value * 0x4000), (UInt16)(c.Value * 0x4000), UInt16.MaxValue),
-            ColorGray4 c => new ColorRgba16((UInt16)(c.Value * 0x1000), (UInt16)(c.Value * 0x1000), (UInt16)(c.Value * 0x1000), UInt16.MaxValue),
-            ColorGray8 c => new ColorRgba16((UInt16)(c.Value * 256), (UInt16)(c.Value * 256), (UInt16)(c.Value * 256), UInt16.MaxValue),
-            ColorGray16 c => new ColorRgba16(c.Value, c.Value, c.Value, UInt16.MaxValue),
-            ColorRgb8 c => new ColorRgba16((UInt16)(c.R * 256), (UInt16)(c.G * 256), (UInt16)(c.B * 256), UInt16.MaxValue),
-            ColorRgb16 c => new ColorRgba16(c.R, c.G, c.B, UInt16.MaxValue),
+            ColorGray1 c => new ColorRgba16((ushort)(c.Value * 0x8000), (ushort)(c.Value * 0x8000), (ushort)(c.Value * 0x8000), ushort.MaxValue),
+            ColorGray2 c => new ColorRgba16((ushort)(c.Value * 0x4000), (ushort)(c.Value * 0x4000), (ushort)(c.Value * 0x4000), ushort.MaxValue),
+            ColorGray4 c => new ColorRgba16((ushort)(c.Value * 0x1000), (ushort)(c.Value * 0x1000), (ushort)(c.Value * 0x1000), ushort.MaxValue),
+            ColorGray8 c => new ColorRgba16((ushort)(c.Value * 256), (ushort)(c.Value * 256), (ushort)(c.Value * 256), ushort.MaxValue),
+            ColorGray16 c => new ColorRgba16(c.Value, c.Value, c.Value, ushort.MaxValue),
+            ColorRgb8 c => new ColorRgba16((ushort)(c.R * 256), (ushort)(c.G * 256), (ushort)(c.B * 256), ushort.MaxValue),
+            ColorRgb16 c => new ColorRgba16(c.R, c.G, c.B, ushort.MaxValue),
             //TODO Indexed
-            ColorGrayAlpha8 c => new ColorRgba16((UInt16)(c.Value * 256), (UInt16)(c.Value * 256), (UInt16)(c.Value * 256), (UInt16)(c.Alpha * 256)),
+            ColorGrayAlpha8 c => new ColorRgba16((ushort)(c.Value * 256), (ushort)(c.Value * 256), (ushort)(c.Value * 256), (ushort)(c.Alpha * 256)),
             ColorGrayAlpha16 c => new ColorRgba16(c.Value, c.Value, c.Value, c.Alpha),
-            ColorRgba8 c => new ColorRgba16((UInt16)(c.R * 256), (UInt16)(c.G * 256), (UInt16)(c.B * 256), (UInt16)(c.A * 256)),
+            ColorRgba8 c => new ColorRgba16((ushort)(c.R * 256), (ushort)(c.G * 256), (ushort)(c.B * 256), (ushort)(c.A * 256)),
             _ => throw new InvalidOperationException("Conversion not supported.")
         }).ConvertTo(colorType, bitDepth);
     }
 }
 
+public class ColorAttribute : Attribute
+{
+    public readonly ColorType ColorType;
+    public readonly byte BitDepth;
+
+    public ColorAttribute(ColorType colorType, byte bitDepth)
+    {
+        ColorType = colorType;
+        BitDepth = bitDepth;
+    }
+}
+
 [DebuggerDisplay("{Value,nq}")]
+[Color(ColorType.Greyscale, 1)]
 public readonly struct ColorGray1(byte value) : IColor
 {
     public readonly byte Value = value;
 }
 
 [DebuggerDisplay("{Value,nq}")]
+[Color(ColorType.Greyscale, 2)]
 public readonly struct ColorGray2(byte value) : IColor
 {
     public readonly byte Value = value;
 }
 
 [DebuggerDisplay("{Value,nq}")]
+[Color(ColorType.Greyscale, 4)]
 public readonly struct ColorGray4(byte value) : IColor
 {
     public readonly byte Value = value;
 }
 
 [DebuggerDisplay("{Value,nq}")]
+[Color(ColorType.Greyscale, 8)]
 public readonly struct ColorGray8(byte value) : IColor
 {
     public readonly byte Value = value;
 }
 
 [DebuggerDisplay("{Value,nq}")]
+[Color(ColorType.Greyscale, 16)]
 public readonly struct ColorGray16(ushort value) : IColor
 {
-    public readonly UInt16 Value = value;
+    public readonly ushort Value = value;
 }
 
-public readonly struct PalletColor : IColor
-{
-    public readonly byte R;
-    public readonly byte G;
-    public readonly byte B;
-}
-
+[Color(ColorType.Truecolor, 8)]
 public readonly struct ColorRgb8(byte r, byte g, byte b) : IColor
 {
     public readonly byte R = r;
@@ -1010,45 +914,53 @@ public readonly struct ColorRgb8(byte r, byte g, byte b) : IColor
     public readonly byte B = b;
 }
 
+[Color(ColorType.Truecolor, 16)]
 public readonly struct ColorRgb16(ushort r, ushort g, ushort b) : IColor
 {
-    public readonly UInt16 R = r;
-    public readonly UInt16 G = g;
-    public readonly UInt16 B = b;
+    public readonly ushort R = r;
+    public readonly ushort G = g;
+    public readonly ushort B = b;
 }
 
+[Color(ColorType.IndexedColor, 1)]
 public readonly struct ColorIndexed1 : IColor
 {
     public readonly byte Value;
 }
 
+[Color(ColorType.IndexedColor, 2)]
 public readonly struct ColorIndexed2 : IColor
 {
     public readonly byte Value;
 }
 
+[Color(ColorType.IndexedColor, 4)]
 public readonly struct ColorIndexed4 : IColor
 {
     public readonly byte Value;
 }
 
+[Color(ColorType.IndexedColor, 8)]
 public readonly struct ColorIndexed8 : IColor
 {
     public readonly byte Value;
 }
 
+[Color(ColorType.GreyscaleWithAlpha, 8)]
 public readonly struct ColorGrayAlpha8(byte value, byte alpha) : IColor
 {
     public readonly byte Value = value;
     public readonly byte Alpha = alpha;
 }
 
+[Color(ColorType.GreyscaleWithAlpha, 16)]
 public readonly struct ColorGrayAlpha16(ushort value, ushort alpha) : IColor
 {
-    public readonly UInt16 Value = value;
-    public readonly UInt16 Alpha = alpha;
+    public readonly ushort Value = value;
+    public readonly ushort Alpha = alpha;
 }
 
+[Color(ColorType.TruecolorWithAlpha, 8)]
 public readonly struct ColorRgba8(byte r, byte g, byte b, byte a) : IColor
 {
     public readonly byte R = r;
@@ -1057,12 +969,13 @@ public readonly struct ColorRgba8(byte r, byte g, byte b, byte a) : IColor
     public readonly byte A = a;
 }
 
+[Color(ColorType.TruecolorWithAlpha, 16)]
 public readonly struct ColorRgba16(ushort r, ushort g, ushort b, ushort a) : IColor
 {
-    public readonly UInt16 R = r;
-    public readonly UInt16 G = g;
-    public readonly UInt16 B = b;
-    public readonly UInt16 A = a;
+    public readonly ushort R = r;
+    public readonly ushort G = g;
+    public readonly ushort B = b;
+    public readonly ushort A = a;
 }
 
 public sealed class DisposableAction(Action dispose) : IDisposable
@@ -1155,7 +1068,7 @@ public static class PngIdatCodec
         Paeth = 4
     }
 
-    public static byte[] DecodeIdat(byte[] idatData, UInt32 width, UInt32 height, byte bitDepth, ColorType colorType)
+    public static byte[] DecodeIdat(byte[] idatData, uint width, uint height, byte bitDepth, ColorType colorType)
     {
         int bytesPerPixel = ComputeBytesPerPixel(colorType, bitDepth);
         int strideBytes = ComputeStride(width, bitDepth, colorType);
@@ -1211,7 +1124,7 @@ public static class PngIdatCodec
         };
     }
 
-    public static byte[] EncodeIdat(byte[] raw, UInt32 width, UInt32 height, byte bitDepth, ColorType colorType, PngFilterType filterType = PngFilterType.None)
+    public static byte[] EncodeIdat(byte[] raw, uint width, uint height, byte bitDepth, ColorType colorType, PngFilterType filterType = PngFilterType.None)
     {
         int bytesPerPixel = ComputeBytesPerPixel(colorType, bitDepth);
         int strideBytes = ComputeStride(width, bitDepth, colorType);
@@ -1283,7 +1196,7 @@ public static class PngIdatCodec
         };
     }
 
-    private static int ComputeStride(UInt32 width, byte bitDepth, ColorType colorType)
+    private static int ComputeStride(uint width, byte bitDepth, ColorType colorType)
     {
         if (bitDepth < 8)
         {
@@ -1353,5 +1266,57 @@ public static class PngIdatCodec
         }
 
         return (b << 16) | a;
+    }
+}
+
+internal static class Maths
+{
+    internal static void ExpandFraction(float value, out ushort defaultNum, out ushort defaultDen)
+    {
+        if (float.IsNaN(value) || float.IsInfinity(value))
+            throw new ArgumentException("Value must be a finite number.");
+
+        if (value <= 0)
+        {
+            defaultNum = 0;
+            defaultDen = 1;
+            return;
+        }
+
+        // Continued fraction expansion
+        const int max = ushort.MaxValue;
+
+        int a0 = (int)Math.Floor(value);
+        if (a0 > max)
+        {
+            defaultNum = max;
+            defaultDen = 1;
+            return;
+        }
+
+        int n0 = 1, d0 = 0; // previous convergent
+        int n1 = a0, d1 = 1; // current convergent
+
+        double frac = value - a0;
+
+        while (frac > 0)
+        {
+            frac = 1.0 / frac;
+            int a = (int)Math.Floor(frac);
+
+            int n2 = a * n1 + n0;
+            int d2 = a * d1 + d0;
+
+            if (n2 > max || d2 > max)
+                break;
+
+            n0 = n1; d0 = d1;
+            n1 = n2; d1 = d2;
+
+            frac -= a;
+        }
+
+        defaultNum = (ushort)n1;
+        defaultDen = (ushort)d1;
     }
 }
