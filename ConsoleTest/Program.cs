@@ -1,49 +1,55 @@
 ﻿using AntiPebbleNG;
 using System.Text.RegularExpressions;
 
-(string name, Regex regex)[] patterns = [
-    ("H10H1M10M1", new Regex(@"\d+_\d+_\d+_\d+")),
-    ("H10H1_1", new Regex(@"\d+h10_\d+h1_1")),
-    ("H10H1_2", new Regex(@"\d+h10_\d+h1_2")),
-    ("H10M1", new Regex(@"\d+h10_\d+m1")),
-    ("H1M10", new Regex(@"\d+h1_\d+m10")),
-    ("M10M1_1", new Regex(@"\d+m10_\d+m1_1")),
-    ("M10M1_2", new Regex(@"\d+m10_\d+m1_2")),
-    ("H10", new Regex(@"\d+h10")),
-    ("H1", new Regex(@"\d+h1")),
-    ("M10", new Regex(@"\d+m10")),
-    ("M1", new Regex(@"\d+m1"))
+(string name, Regex regex, bool withBlank)[] patterns = [
+    ("H10H1M10M1", new Regex(@"\d+_\d+_\d+_\d+"), false),
+    ("H10H1_1", new Regex(@"\d+h10_\d+h1_1"), true),
+    ("H10H1_2", new Regex(@"\d+h10_\d+h1_2"), true),
+    ("H10M1", new Regex(@"\d+h10_\d+m1"), true),
+    ("H1M10", new Regex(@"\d+h1_\d+m10"), false),
+    ("M10M1_1", new Regex(@"\d+m10_\d+m1_1"), false),
+    ("M10M1_2", new Regex(@"\d+m10_\d+m1_2"), false),
+    ("H10", new Regex(@"\d+h10"), false),
+    ("H1", new Regex(@"\d+h1"), false),
+    ("M10", new Regex(@"\d+m10"), false),
+    ("M1", new Regex(@"\d+m1"), false)
 ];
 
 List<string> defines = [];
 
-foreach (IGrouping<string, string> group in Directory.GetFiles(@"C:\Temp\rorschach\pebble-rorschach-v3\resources\images\numbers").GroupBy(x => patterns.First(p => p.regex.IsMatch(x)).name))
+foreach (IGrouping<string, string> group in Directory.GetFiles(@"H:\Projects\pebble-rorschach-v3\resources\images").GroupBy(x => patterns.First(p => p.regex.IsMatch(x)).name))
 {
     int id = 0;
+    bool withBlank = patterns.First(p => p.name == group.Key).withBlank;
 
-    defines.Add($"#define FRAME_{group.Key}_EMPTY 0");
+    if (withBlank)
+        defines.Add($"#define FRAME_{group.Key}_EMPTY {id++}");
 
     List<Png> images = [];
 
     foreach (string s in group)
     {
-        id++;
-        defines.Add($"#define FRAME_{Path.GetFileNameWithoutExtension(s).ToUpper()} {id}");
+        defines.Add($"#define FRAME_{Path.GetFileNameWithoutExtension(s).ToUpper()} {id++}");
         images.Add(new Png(s));
     }
 
+    Png firstImg;
 
-    Png emptyImg = new(images.First().Width, images.First().Height, ColorType.Greyscale, 2, Colors.Black)
+    if (withBlank)
+        firstImg = new(images[0].Width, images[0].Height, ColorType.Greyscale, 2, Colors.Black);
+    else
     {
-        CheckCrc = false,
-        DefaultDelayInSeconds = 1,
-        StripDecoration = true
-    };
+        firstImg = images[0];
+        images = images[1..];
+    }
+
+    firstImg.DefaultDelayInSeconds = 1;
+    firstImg.StripDecoration = true;
 
     foreach (Png image in images)
-        emptyImg.AddFrame(image);
+        firstImg.AddFrame(image);
 
-    emptyImg.Save(group.Key + ".png");
+    firstImg.Save(group.Key + ".png");
 
     foreach (Png image in images)
     {
@@ -51,7 +57,7 @@ foreach (IGrouping<string, string> group in Directory.GetFiles(@"C:\Temp\rorscha
         pixels.FlipVertical();
     }
 
-    emptyImg.Save("I" + group.Key + ".png");
+    firstImg.Save("I" + group.Key + ".png");
 }
 
 File.WriteAllLines("defines.h", defines);

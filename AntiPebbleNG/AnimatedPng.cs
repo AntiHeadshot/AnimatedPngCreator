@@ -659,7 +659,7 @@ internal static class SpanExtension
         return bytes[size..];
     }
 
-    public static byte[] Write(this object obj)
+    public static Span<byte> Write(this object obj)
     {
         Type type = obj.GetType();
 
@@ -680,16 +680,16 @@ internal static class SpanExtension
                     if (fieldInfo.FieldType == typeof(byte[]))
                         data.Add((byte[])fieldInfo.GetValue(obj)!);
                     else
-                        data.AddRange(from object? o in (fieldInfo.GetValue(obj) as IEnumerable)! select o!.Write());
+                        data.Add([.. ((IEnumerable)fieldInfo.GetValue(obj)).Cast<object>().SelectMany(o => o!.Write().ToArray())]);
                 }
                 else
-                    data.Add(fieldInfo.GetValue(obj)!.Write());
+                    data.Add([.. fieldInfo.GetValue(obj)!.Write()]);
             }
 
-            return [.. data.SelectMany(x => x)];
+            return data.SelectMany(x => x).ToArray();
         }
 
-        byte[] valueBytes = Type.GetTypeCode(type) switch
+        Span<byte> valueBytes = (Type.GetTypeCode(type) switch
         {
             TypeCode.UInt16 => BitConverter.GetBytes((UInt16)obj),
             TypeCode.UInt32 => BitConverter.GetBytes((UInt32)obj),
@@ -699,9 +699,9 @@ internal static class SpanExtension
             TypeCode.Int64 => BitConverter.GetBytes((Int64)obj),
             TypeCode.Byte => [(byte)obj],
             _ => throw new ArgumentException($"Cant handle {type.Name}.")
-        };
-        return [.. valueBytes.Reverse()];
-        //valueBytes;
+        }).AsSpan();
+        valueBytes.Reverse();
+        return valueBytes;
     }
 }
 
@@ -726,8 +726,8 @@ public class Chunk<T> : AbstractChunk where T : IChunkData
 
     public override void Save(Stream stream)
     {
-        byte[] name = Start.Name.Write();
-        byte[] data = Data.Write();
+        Span<byte> name = Start.Name.Write();
+        Span<byte> data = Data.Write();
         stream.Write((Start.Size = (UInt32)data.Length).Write());
         stream.Write(name);
         stream.Write(data);
