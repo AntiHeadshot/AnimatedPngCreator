@@ -17,7 +17,7 @@ using System.Text.RegularExpressions;
 
 List<string> defines = [];
 
-foreach (IGrouping<string, string> group in Directory.GetFiles(@"H:\Projects\pebble-rorschach-v3\resources\images\numbers").GroupBy(x => patterns.First(p => p.regex.IsMatch(x)).name))
+foreach (IGrouping<string, string> group in Directory.GetFiles(@"C:\Temp\rorschach\pebble-rorschach-v3\resources\images\numbers").GroupBy(x => patterns.First(p => p.regex.IsMatch(x)).name))
 {
     int id = 0;
 
@@ -46,10 +46,10 @@ foreach (IGrouping<string, string> group in Directory.GetFiles(@"H:\Projects\peb
     emptyImg.Save(group.Key + ".png");
 
     foreach (Png image in images)
-        using (var _ = image.Unlock(out Image pixels))
-        {
-            pixels.FlipVertical();
-        }
+    {
+        using IDisposable _ = image.Unlock(out Image pixels);
+        pixels.FlipVertical();
+    }
 
     emptyImg.Save("I" + group.Key + ".png");
 }

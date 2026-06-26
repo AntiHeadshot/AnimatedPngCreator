@@ -45,8 +45,8 @@ public class Png
                 return;
             }
 
-            int n0 = 1, d0 = 0;     // previous convergent
-            int n1 = a0, d1 = 1;    // current convergent
+            int n0 = 1, d0 = 0; // previous convergent
+            int n1 = a0, d1 = 1; // current convergent
 
             double frac = value - a0;
 
@@ -82,7 +82,7 @@ public class Png
 
     public Png(string filename)
     {
-        using var file = File.OpenRead(filename);
+        using FileStream file = File.OpenRead(filename);
         Load(file);
         Init();
     }
@@ -224,11 +224,11 @@ public class Png
     {
         return (byte)(colorType switch
         {
-            ColorType.Greyscale => bitDepth,          // Grayscale
-            ColorType.Truecolor => 3 * bitDepth,      // RGB
-            ColorType.IndexedColor => bitDepth,                       // Indexed (1 byte per index)
-            ColorType.GreyscaleWithAlpha => 2 * bitDepth,      // Gray + Alpha
-            ColorType.TruecolorWithAlpha => 4 * bitDepth,      // RGBA
+            ColorType.Greyscale => bitDepth,
+            ColorType.Truecolor => 3 * bitDepth,
+            ColorType.IndexedColor => bitDepth,
+            ColorType.GreyscaleWithAlpha => 2 * bitDepth,
+            ColorType.TruecolorWithAlpha => 4 * bitDepth,
             _ => throw new ArgumentOutOfRangeException(nameof(colorType))
         });
     }
@@ -271,14 +271,12 @@ public class Png
 
     private void Load(Stream stream)
     {
-        foreach (byte b in Signature)
+        if (Signature.Any(b => stream.ReadByte() != b))
         {
-            int r = stream.ReadByte();
-            if (b != r)
-                throw new FormatException("No PNG file loaded. Signature missmatch.");
+            throw new FormatException("No PNG file loaded. Signature mismatch.");
         }
 
-        long readEnd = stream.Length - Marshal.SizeOf(typeof(ChunkStart)) + sizeof(UInt32);
+        long readEnd = stream.Length - Marshal.SizeOf(typeof(ChunkStart)) + 4;
 
         do LoadChunk(stream);
         while (readEnd > stream.Position);
@@ -291,9 +289,9 @@ public class Png
     {
         for (int i = 0; i < Signature.Length; i++)
             if (Signature[i] != data[i])
-                throw new FormatException("No PNG data loaded. Signature missmatch.");
+                throw new FormatException("No PNG data loaded. Signature mismatch.");
         data = data[Signature.Length..];
-        long minSize = Marshal.SizeOf(typeof(ChunkStart)) + sizeof(UInt32);
+        long minSize = Marshal.SizeOf(typeof(ChunkStart)) + 4;
 
         do data = LoadChunk(data);
         while (data.Length >= minSize);
@@ -343,31 +341,34 @@ public class Png
         return data[(int)(start.Size + 8)..];
     }
 
+    private static readonly Dictionary<string, Type> ChunkTypesByName = typeof(IChunkData).Assembly.GetTypes()
+        .Where(x => x != typeof(IChunkData) && x.IsAssignableTo(typeof(IChunkData)))
+        .ToDictionary(x => ((IChunkData)Activator.CreateInstance(x)!).Name, x => x);
+
     private AbstractChunk LoadChunk(ChunkStart chunkStart, Span<byte> chunk)
     {
-        AbstractChunk chunkData = chunkStart.Name switch
-        {
-            "IHDR" => LoadChunk<Ihdr>(chunk),
-            "PLTE" => LoadChunk<Plte>(chunk),
-            "IDAT" => LoadChunk<Idat>(chunk),
-            "IEND" => LoadChunk<Iend>(chunk),
-            "acTL" => LoadChunk<Actl>(chunk),
-            "fcTL" => LoadChunk<Fctl>(chunk),
-            "fdAT" => LoadChunk<Fdat>(chunk),
-            "tEXt" => LoadChunk<Text>(chunk),
-            _ => LoadChunk<Unknown>(chunk),
-        };
+        AbstractChunk chunkData = LoadChunk(ChunkTypesByName.TryGetValue(chunkStart.Name, out Type? type) ? type : ChunkTypesByName[""], chunk);
         chunkData.Start = chunkStart;
         _chunks.Add(chunkData);
         return chunkData;
     }
 
-    private static Chunk<T> LoadChunk<T>(Span<byte> data) where T : IChunkData
+    private static AbstractChunk LoadChunk(Type t, Span<byte> data)
     {
-        Chunk<T> chunk = (Chunk<T>)Activator.CreateInstance(typeof(Chunk<T>), true)!;
+        if (!t.IsAssignableTo(typeof(IChunkData)))
+            throw new InvalidOperationException("Only Classes inheriting IChunkData can be loaded.");
 
-        data[..^4].Read(out chunk.Data);
-        data[^4..].Read(out chunk.Crc);
+        Type chunkType = typeof(Chunk<>).MakeGenericType(t);
+        AbstractChunk chunk = (AbstractChunk)Activator.CreateInstance(chunkType, true)!;
+
+        FieldInfo dataField = chunkType.GetField(nameof(Chunk<Idat>.Data))!;
+        FieldInfo crcField = chunkType.GetField(nameof(Chunk<Idat>.Crc))!;
+
+        data[..^4].Read(t, out object dataValue);
+        dataField.SetValue(chunk, dataValue);
+
+        data[^4..].Read(out UInt32 crc);
+        crcField.SetValue(chunk, crc);
 
         return chunk;
     }
@@ -380,7 +381,7 @@ public class Png
         if (dirname != null)
             Directory.CreateDirectory(dirname);
 
-        using var f = File.Open(fileInfo.FullName, FileMode.Create);
+        using FileStream f = File.Open(fileInfo.FullName, FileMode.Create);
         Save(f);
     }
 
@@ -448,8 +449,8 @@ public class Png
         UInt32 id = 0;
         foreach ((Chunk<Fdat>? fdat, Chunk<Fctl>? fctl) in orderedChunks.OfType<Fdat, Fctl>())
         {
-            fdat?.Data.SequenceNumber = id++;
-            fctl?.Data.SequenceNumber = id++;
+            if (fdat != null) fdat.Data.SequenceNumber = id++;
+            if (fctl != null) fctl.Data.SequenceNumber = id++;
         }
 
         Chunk<Actl> actl = orderedChunks.First<Actl>();
@@ -459,7 +460,7 @@ public class Png
 
         if (StripDecoration)
         {
-            //Safe to copy-flag = true, so only meta data.
+            //Safe to copy-flag = true, so only metadata.
             foreach (AbstractChunk chunk in _chunks.Where(c => char.IsLower(c.Start.Name[^1])))
                 orderedChunks.Remove(chunk);
         }
@@ -585,81 +586,78 @@ public struct ChunkStart
 
 internal static class SpanExtension
 {
-    extension(Span<byte> bytes)
+    public static Span<byte> Read<T>(this Span<byte> bytes, out T value)
     {
-        public Span<byte> Read<T>(out T value)
-        {
-            Span<byte> newPos = bytes.Read(typeof(T), out object o);
-            value = (T)o;
-            return newPos;
-        }
+        Span<byte> newPos = bytes.Read(typeof(T), out object o);
+        value = (T)o;
+        return newPos;
+    }
 
-        public Span<byte> Read(Type type, out object value)
+    public static Span<byte> Read(this Span<byte> bytes, Type type, out object value)
+    {
+        if (type.IsEnum)
+            type = Enum.GetUnderlyingType(type);
+        else if (!type.IsPrimitive)
         {
-            if (type.IsEnum)
-                type = Enum.GetUnderlyingType(type);
-            else if (!type.IsPrimitive)
+            if (type == typeof(string))
             {
-                if (type == typeof(string))
-                {
-                    string s = Encoding.Default.GetString(bytes);
-                    value = s;
-                    return bytes[s.Length..];
-                }
+                string s = Encoding.Default.GetString(bytes);
+                value = s;
+                return bytes[s.Length..];
+            }
 
-                value = Activator.CreateInstance(type)!;
+            value = Activator.CreateInstance(type)!;
 
-                foreach (FieldInfo fieldInfo in type.GetFields(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic))
+            foreach (FieldInfo fieldInfo in type.GetFields(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic))
+            {
+                if (fieldInfo.FieldType.IsArray)
                 {
-                    if (fieldInfo.FieldType.IsArray)
+                    if (fieldInfo.FieldType == typeof(byte[]))
                     {
-                        if (fieldInfo.FieldType == typeof(byte[]))
-                        {
-                            fieldInfo.SetValue(value, bytes.ToArray());
-                            bytes = bytes[^0..];
-                        }
-                        else
-                        {
-                            Type elemType = fieldInfo.FieldType.GetElementType()!;
-                            IList list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(elemType))!;
-                            while (bytes.Length > 0)
-                            {
-                                bytes = bytes.Read(elemType, out object o);
-                                list.Add(o);
-                            }
-
-                            Array array = (Array)Activator.CreateInstance(fieldInfo.FieldType, list.Count)!;
-                            list.CopyTo(array, 0);
-                            fieldInfo.SetValue(value, array);
-                        }
+                        fieldInfo.SetValue(value, bytes.ToArray());
+                        bytes = bytes[^0..];
                     }
                     else
                     {
-                        bytes = bytes.Read(fieldInfo.FieldType, out object o);
-                        fieldInfo.SetValue(value, o);
+                        Type elemType = fieldInfo.FieldType.GetElementType()!;
+                        IList list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(elemType))!;
+                        while (bytes.Length > 0)
+                        {
+                            bytes = bytes.Read(elemType, out object o);
+                            list.Add(o);
+                        }
+
+                        Array array = (Array)Activator.CreateInstance(fieldInfo.FieldType, list.Count)!;
+                        list.CopyTo(array, 0);
+                        fieldInfo.SetValue(value, array);
                     }
                 }
-
-                return bytes;
+                else
+                {
+                    bytes = bytes.Read(fieldInfo.FieldType, out object o);
+                    fieldInfo.SetValue(value, o);
+                }
             }
 
-            int size = Marshal.SizeOf(type);
-
-            Span<byte> valueBytes = bytes[..size];
-            valueBytes.Reverse();
-            value = Type.GetTypeCode(type) switch
-            {
-                TypeCode.UInt16 => BitConverter.ToUInt16(valueBytes),
-                TypeCode.UInt32 => BitConverter.ToUInt32(valueBytes),
-                TypeCode.UInt64 => BitConverter.ToUInt64(valueBytes),
-                TypeCode.Int16 => BitConverter.ToInt16(valueBytes),
-                TypeCode.Int32 => BitConverter.ToInt32(valueBytes),
-                TypeCode.Int64 => BitConverter.ToInt64(valueBytes),
-                TypeCode.Byte => valueBytes[0],
-                _ => throw new ArgumentException($"Cant handle {type.Name}.")
-            };
-            return bytes[size..];
+            return bytes;
         }
+
+        int size = Marshal.SizeOf(type);
+
+        Span<byte> valueBytes = bytes[..size];
+        valueBytes.Reverse();
+        value = Type.GetTypeCode(type) switch
+        {
+            TypeCode.UInt16 => BitConverter.ToUInt16(valueBytes),
+            TypeCode.UInt32 => BitConverter.ToUInt32(valueBytes),
+            TypeCode.UInt64 => BitConverter.ToUInt64(valueBytes),
+            TypeCode.Int16 => BitConverter.ToInt16(valueBytes),
+            TypeCode.Int32 => BitConverter.ToInt32(valueBytes),
+            TypeCode.Int64 => BitConverter.ToInt64(valueBytes),
+            TypeCode.Byte => valueBytes[0],
+            _ => throw new ArgumentException($"Cant handle {type.Name}.")
+        };
+        return bytes[size..];
     }
 
     public static byte[] Write(this object obj)
@@ -703,8 +701,8 @@ internal static class SpanExtension
             TypeCode.Byte => [(byte)obj],
             _ => throw new ArgumentException($"Cant handle {type.Name}.")
         };
-        valueBytes.Reverse();
-        return valueBytes;
+        return [.. valueBytes.Reverse()];
+        //valueBytes;
     }
 }
 
@@ -721,8 +719,10 @@ public class Chunk<T> : AbstractChunk where T : IChunkData
 
     public Chunk(T data)
     {
+        if (data is Unknown)
+            throw new ArgumentException("It is not allowed to create new Unknown Chunks.");
         Data = data;
-        Start = new ChunkStart(typeof(T).Name);
+        Start = new ChunkStart(data.Name);
     }
 
     public override void Save(Stream stream)
@@ -874,11 +874,11 @@ public class Unknown : IChunkData
 
 public static class Colors
 {
-    public static readonly ColorRgba8 Black = new() { R = 0, G = 0, B = 0, A = 255 };
-    public static readonly ColorRgba8 White = new() { R = 255, G = 255, B = 255, A = 255 };
-    public static readonly ColorRgba8 Red = new() { R = 255, G = 0, B = 0, A = 255 };
-    public static readonly ColorRgba8 Green = new() { R = 0, G = 255, B = 0, A = 255 };
-    public static readonly ColorRgba8 Blue = new() { R = 0, G = 0, B = 255, A = 255 };
+    public static readonly ColorRgba8 Black = new(0, 0, 0, 255);
+    public static readonly ColorRgba8 White = new(255, 255, 255, 255);
+    public static readonly ColorRgba8 Red = new(255, 0, 0, 255);
+    public static readonly ColorRgba8 Green = new(0, 255, 0, 255);
+    public static readonly ColorRgba8 Blue = new(0, 0, 255, 255);
 }
 
 public abstract class Image(in int width, in int height)
@@ -941,7 +941,6 @@ public class Image<TColor>(int width, int height, Span<byte> data) : Image(width
 
 public interface IColor
 {
-
 }
 
 public static class ColorExtension
@@ -970,7 +969,7 @@ public static class ColorExtension
                     },
                 ColorType.IndexedColor =>
                     //TODO ... somehow pass in the palette
-                    throw new InvalidOperationException("Conversion not suported."),
+                    throw new InvalidOperationException("Conversion not supported."),
                 ColorType.GreyscaleWithAlpha =>
                     bitDepth switch
                     {
@@ -1001,110 +1000,108 @@ public static class ColorExtension
             ColorGrayAlpha8 c => new ColorRgba16((UInt16)(c.Value * 256), (UInt16)(c.Value * 256), (UInt16)(c.Value * 256), (UInt16)(c.Alpha * 256)),
             ColorGrayAlpha16 c => new ColorRgba16(c.Value, c.Value, c.Value, c.Alpha),
             ColorRgba8 c => new ColorRgba16((UInt16)(c.R * 256), (UInt16)(c.G * 256), (UInt16)(c.B * 256), (UInt16)(c.A * 256)),
-            _ => throw new InvalidOperationException("Conversion not suported.")
+            _ => throw new InvalidOperationException("Conversion not supported.")
         }).ConvertTo(colorType, bitDepth);
     }
 }
 
 [DebuggerDisplay("{Value,nq}")]
-public struct ColorGray1(byte value) : IColor
+public readonly struct ColorGray1(byte value) : IColor
 {
-    public byte Value = value;
+    public readonly byte Value = value;
 }
 
 [DebuggerDisplay("{Value,nq}")]
-public struct ColorGray2(byte value) : IColor
+public readonly struct ColorGray2(byte value) : IColor
 {
-    public byte Value = value;
+    public readonly byte Value = value;
 }
 
 [DebuggerDisplay("{Value,nq}")]
-public struct ColorGray4(byte value) : IColor
+public readonly struct ColorGray4(byte value) : IColor
 {
-    public byte Value = value;
+    public readonly byte Value = value;
 }
 
 [DebuggerDisplay("{Value,nq}")]
-public struct ColorGray8(byte value) : IColor
+public readonly struct ColorGray8(byte value) : IColor
 {
-    public byte Value = value;
+    public readonly byte Value = value;
 }
 
 [DebuggerDisplay("{Value,nq}")]
-public struct ColorGray16(ushort value) : IColor
+public readonly struct ColorGray16(ushort value) : IColor
 {
-    public UInt16 Value = value;
+    public readonly UInt16 Value = value;
 }
 
-public struct PalletColor : IColor
+public readonly struct PalletColor : IColor
 {
-    public byte R;
-    public byte G;
-    public byte B;
+    public readonly byte R;
+    public readonly byte G;
+    public readonly byte B;
 }
 
-public struct ColorRgb8(byte r, byte g, byte b) : IColor
+public readonly struct ColorRgb8(byte r, byte g, byte b) : IColor
 {
-    public byte R = r;
-    public byte G = g;
-    public byte B = b;
+    public readonly byte R = r;
+    public readonly byte G = g;
+    public readonly byte B = b;
 }
 
-public struct ColorRgb16(ushort r, ushort g, ushort b) : IColor
+public readonly struct ColorRgb16(ushort r, ushort g, ushort b) : IColor
 {
-    public UInt16 R = r;
-    public UInt16 G = g;
-    public UInt16 B = b;
+    public readonly UInt16 R = r;
+    public readonly UInt16 G = g;
+    public readonly UInt16 B = b;
 }
 
-public struct ColorIndexed1 : IColor
+public readonly struct ColorIndexed1 : IColor
 {
-    public byte Value;
+    public readonly byte Value;
 }
 
-public struct ColorIndexed2 : IColor
+public readonly struct ColorIndexed2 : IColor
 {
-    public byte Value;
+    public readonly byte Value;
 }
 
-public struct ColorIndexed4 : IColor
+public readonly struct ColorIndexed4 : IColor
 {
-    public byte Value;
+    public readonly byte Value;
 }
 
-public struct ColorIndexed8 : IColor
+public readonly struct ColorIndexed8 : IColor
 {
-    public byte Value;
+    public readonly byte Value;
 }
 
-public struct ColorGrayAlpha8(byte value, byte alpha) : IColor
+public readonly struct ColorGrayAlpha8(byte value, byte alpha) : IColor
 {
-    public byte Value = value;
-    public byte Alpha = alpha;
+    public readonly byte Value = value;
+    public readonly byte Alpha = alpha;
 }
 
-public struct ColorGrayAlpha16(ushort value, ushort alpha) : IColor
+public readonly struct ColorGrayAlpha16(ushort value, ushort alpha) : IColor
 {
-    public UInt16 Value = value;
-    public UInt16 Alpha = alpha;
+    public readonly UInt16 Value = value;
+    public readonly UInt16 Alpha = alpha;
 }
 
-public struct ColorRgba8(byte r, byte g, byte b, byte a)
-    : IColor
+public readonly struct ColorRgba8(byte r, byte g, byte b, byte a) : IColor
 {
-    public byte R = r;
-    public byte G = g;
-    public byte B = b;
-    public byte A = a;
+    public readonly byte R = r;
+    public readonly byte G = g;
+    public readonly byte B = b;
+    public readonly byte A = a;
 }
 
-public struct ColorRgba16(ushort r, ushort g, ushort b, ushort a)
-    : IColor
+public readonly struct ColorRgba16(ushort r, ushort g, ushort b, ushort a) : IColor
 {
-    public UInt16 R = r;
-    public UInt16 G = g;
-    public UInt16 B = b;
-    public UInt16 A = a;
+    public readonly UInt16 R = r;
+    public readonly UInt16 G = g;
+    public readonly UInt16 B = b;
+    public readonly UInt16 A = a;
 }
 
 public sealed class DisposableAction(Action dispose) : IDisposable
@@ -1207,70 +1204,28 @@ public static class PngIdatCodec
         byte[] filtered = ZlibDecompress(idatData);
         byte[] result = new byte[height * strideBytes];
 
-        byte[] prev = new byte[strideBytes];
-        byte[] recon = new byte[strideBytes];
+        Span<byte> prev = new byte[strideBytes];
 
         int src = 0;
         int dst = 0;
 
         for (int y = 0; y < height; y++)
         {
-            PngFilterType filter = (PngFilterType)filtered[src++];
-            Array.Clear(recon, 0, strideBytes);
+            Span<byte> recon = result.AsSpan(dst, strideBytes);
 
-            switch (filter)
+            FilterDelegate filter = GetDecodeFilter((PngFilterType)filtered[src++]);
+
+            for (int x = 0; x < strideBytes; x++)
             {
-                case PngFilterType.None:
-                    Buffer.BlockCopy(filtered, src, recon, 0, strideBytes);
-                    break;
+                byte raw = filtered[src + x];
+                byte a = x >= bytesPerPixel ? recon[x - bytesPerPixel] : (byte)0;
+                byte b = prev[x];
+                byte c = x >= bytesPerPixel ? prev[x - bytesPerPixel] : (byte)0;
 
-                case PngFilterType.Sub:
-                    for (int x = 0; x < strideBytes; x++)
-                    {
-                        byte raw = filtered[src + x];
-                        byte a = x >= bytesPerPixel ? recon[x - bytesPerPixel] : (byte)0;
-                        recon[x] = (byte)(raw + a);
-                    }
-                    break;
-
-                case PngFilterType.Up:
-                    for (int x = 0; x < strideBytes; x++)
-                    {
-                        byte raw = filtered[src + x];
-                        byte b = prev[x];
-                        recon[x] = (byte)(raw + b);
-                    }
-                    break;
-
-                case PngFilterType.Average:
-                    for (int x = 0; x < strideBytes; x++)
-                    {
-                        byte raw = filtered[src + x];
-                        byte a = x >= bytesPerPixel ? recon[x - bytesPerPixel] : (byte)0;
-                        byte b = prev[x];
-                        byte avg = (byte)(((int)a + b) / 2);
-                        recon[x] = (byte)(raw + avg);
-                    }
-                    break;
-
-                case PngFilterType.Paeth:
-                    for (int x = 0; x < strideBytes; x++)
-                    {
-                        byte raw = filtered[src + x];
-                        byte a = x >= bytesPerPixel ? recon[x - bytesPerPixel] : (byte)0;
-                        byte b = prev[x];
-                        byte c = x >= bytesPerPixel ? prev[x - bytesPerPixel] : (byte)0;
-                        byte pr = PaethPredictor(a, b, c);
-                        recon[x] = (byte)(raw + pr);
-                    }
-                    break;
-
-                default:
-                    throw new InvalidOperationException($"Unsupported filter type {filter}");
+                recon[x] = filter(raw, a, b, c);
             }
 
-            Buffer.BlockCopy(recon, 0, result, dst, strideBytes);
-            Buffer.BlockCopy(recon, 0, prev, 0, strideBytes);
+            prev = recon;
 
             src += strideBytes;
             dst += strideBytes;
@@ -1279,84 +1234,76 @@ public static class PngIdatCodec
         return result;
     }
 
+    private static FilterDelegate GetDecodeFilter(PngFilterType filterType)
+    {
+        return filterType switch
+        {
+            PngFilterType.None => (x, _, _, _) => x,
+
+            PngFilterType.Sub => (x, a, _, _) => (byte)(x + a),
+
+            PngFilterType.Up => (x, _, b, _) => (byte)(x + b),
+
+            PngFilterType.Average => (x, a, b, _) => (byte)(x + (byte)(((int)a + b) / 2)),
+
+            PngFilterType.Paeth => (x, a, b, c) => (byte)(x + PaethPredictor(a, b, c)),
+
+            _ => throw new InvalidOperationException($"Unsupported filter type {filterType}")
+        };
+    }
+
     public static byte[] EncodeIdat(byte[] raw, UInt32 width, UInt32 height, byte bitDepth, ColorType colorType, PngFilterType filterType = PngFilterType.None)
     {
         int bytesPerPixel = ComputeBytesPerPixel(colorType, bitDepth);
         int strideBytes = ComputeStride(width, bitDepth, colorType);
 
         byte[] filtered = new byte[height * (strideBytes + 1)];
-        byte[] prev = new byte[strideBytes];
+        Span<byte> prev = new byte[strideBytes];
 
         int src = 0;
         int dst = 0;
 
         for (int y = 0; y < height; y++)
         {
-            PngFilterType lineFilter = filterType;
+            filtered[dst++] = (byte)filterType;
 
-            filtered[dst++] = (byte)lineFilter;
+            FilterDelegate filter = GetEncodeFilter(filterType);
 
-            switch (lineFilter)
+            for (int x = 0; x < strideBytes; x++)
             {
-                case PngFilterType.None:
-                    Buffer.BlockCopy(raw, src, filtered, dst, strideBytes);
-                    dst += strideBytes;
-                    break;
-
-                case PngFilterType.Sub:
-                    for (int x = 0; x < strideBytes; x++)
-                    {
-                        byte orig = raw[src + x];
-                        byte a = x >= bytesPerPixel ? raw[src + x - bytesPerPixel] : (byte)0;
-                        filtered[dst + x] = (byte)(orig - a);
-                    }
-                    dst += strideBytes;
-                    break;
-
-                case PngFilterType.Up:
-                    for (int x = 0; x < strideBytes; x++)
-                    {
-                        byte orig = raw[src + x];
-                        byte b = prev[x];
-                        filtered[dst + x] = (byte)(orig - b);
-                    }
-                    dst += strideBytes;
-                    break;
-
-                case PngFilterType.Average:
-                    for (int x = 0; x < strideBytes; x++)
-                    {
-                        byte orig = raw[src + x];
-                        byte a = x >= bytesPerPixel ? raw[src + x - bytesPerPixel] : (byte)0;
-                        byte b = prev[x];
-                        byte avg = (byte)(((int)a + b) / 2);
-                        filtered[dst + x] = (byte)(orig - avg);
-                    }
-                    dst += strideBytes;
-                    break;
-
-                case PngFilterType.Paeth:
-                    for (int x = 0; x < strideBytes; x++)
-                    {
-                        byte orig = raw[src + x];
-                        byte a = x >= bytesPerPixel ? raw[src + x - bytesPerPixel] : (byte)0;
-                        byte b = prev[x];
-                        byte c = x >= bytesPerPixel ? prev[x - bytesPerPixel] : (byte)0;
-                        byte pr = PaethPredictor(a, b, c);
-                        filtered[dst + x] = (byte)(orig - pr);
-                    }
-                    dst += strideBytes;
-                    break;
-
-                default:
-                    throw new InvalidOperationException($"Unsupported filter type {lineFilter}");
+                byte orig = raw[src + x];
+                byte a = x >= bytesPerPixel ? raw[src + x - bytesPerPixel] : (byte)0;
+                byte b = prev[x];
+                byte c = x >= bytesPerPixel ? prev[x - bytesPerPixel] : (byte)0;
+                filtered[dst + x] = filter(orig, a, b, c);
             }
 
-            Buffer.BlockCopy(raw, src, prev, 0, strideBytes);
+            prev = raw.AsSpan(src, strideBytes);
+
+            dst += strideBytes;
             src += strideBytes;
         }
 
         return ZlibCompress(filtered);
+    }
+
+    delegate byte FilterDelegate(byte x, byte a, byte b, byte c);
+    private static FilterDelegate GetEncodeFilter(PngFilterType filterType)
+    {
+        return filterType switch
+        {
+            PngFilterType.None => (x, _, _, _) => x,
+
+            PngFilterType.Sub => (x, a, _, _) => (byte)(x - a),
+
+            PngFilterType.Up => (x, _, b, _) => (byte)(x - b),
+
+            PngFilterType.Average => (x, a, b, _) => (byte)(x - (byte)(((int)a + b) / 2)),
+
+            PngFilterType.Paeth => (x, a, b, c) => (byte)(x - PaethPredictor(a, b, c)),
+
+            _ => throw new InvalidOperationException($"Unsupported filter type {filterType}")
+        };
     }
 
     public static int ComputeBytesPerPixel(ColorType colorType, byte bitDepth)
@@ -1404,13 +1351,13 @@ public static class PngIdatCodec
 
     private static byte[] ZlibCompress(byte[] data)
     {
-        using var ms = new MemoryStream();
+        using MemoryStream ms = new();
 
         // zlib header: 0x78 0x9C (DEFLATE, 32K window, default compression)
         ms.WriteByte(0x78);
         ms.WriteByte(0x9C);
 
-        using (var def = new DeflateStream(ms, CompressionLevel.Optimal, true))
+        using (DeflateStream def = new(ms, CompressionLevel.Optimal, true))
             def.Write(data, 0, data.Length);
 
         uint adler = Adler32(data);
@@ -1421,17 +1368,17 @@ public static class PngIdatCodec
 
     private static byte[] ZlibDecompress(byte[] zlib)
     {
-        using var ms = new MemoryStream(zlib[2..^4]);
+        using MemoryStream ms = new(zlib[2..^4]);
 
-        zlib.AsSpan(-4).Read(out uint adler);
+        zlib.AsSpan(zlib.Length - 4).Read(out uint adler);
 
-        using var def = new DeflateStream(ms, CompressionMode.Decompress);
-        using var outMs = new MemoryStream();
+        using DeflateStream def = new(ms, CompressionMode.Decompress);
+        using MemoryStream outMs = new();
         def.CopyTo(outMs);
         byte[] data = outMs.ToArray();
 
         if (Adler32(data) != adler)
-            throw new Exception("Adler32 missmatch");
+            throw new Exception("Adler32 mismatch");
         return data;
     }
 
