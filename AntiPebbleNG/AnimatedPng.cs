@@ -9,7 +9,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace AntiPng;
+namespace AntiPebbleNG;
 
 public class Png
 {
@@ -732,7 +732,7 @@ public class Chunk<T> : AbstractChunk where T : IChunkData
         stream.Write((Start.Size = (UInt32)data.Length).Write());
         stream.Write(name);
         stream.Write(data);
-        stream.Write((Crc = AntiPng.Crc.Get([.. name, .. data])).Write());
+        stream.Write((Crc = AntiPebbleNG.Crc.Get([.. name, .. data])).Write());
     }
 }
 

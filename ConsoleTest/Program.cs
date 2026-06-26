@@ -1,4 +1,4 @@
-﻿using AntiPng;
+﻿using AntiPebbleNG;
 using System.Text.RegularExpressions;
 
 (string name, Regex regex)[] patterns = [

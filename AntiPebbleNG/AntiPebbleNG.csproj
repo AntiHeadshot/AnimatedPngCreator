@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+
+    <OutputType>Library</OutputType>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <TargetFramework>net8.0</TargetFramework>
+
+    <PackageId>AntiHeadshot.AntiPebbleNG</PackageId>
+    <Version>1.0.0</Version>
+    <Author>Tobi Dahmen</Author>
+    <Product>PNG handling mainly for Pebble.</Product>
+    <Description>You want a PNG/APNG conversion tha just works for embedding in your Pebble Watchface/App. Just load and save it with this library and you are golden. (You also can combine and modify PNGs.) IMPORTANT: This library is not written for performance, it is written for expressiveness and ease of extendability.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/AntiHeadshot/AntiPebbleNG</PackageProjectUrl>
+    <PackageIconUrl></PackageIconUrl>
+    <PackageTags>PNG;APNG;Pebble</PackageTags>
+
+  </PropertyGroup>
+
+</Project>
