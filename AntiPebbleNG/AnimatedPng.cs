@@ -314,7 +314,8 @@ public class Png
         if (CheckCrc)
         {
             stream.Seek(streamStart + sizeof(UInt32), SeekOrigin.Begin);
-            stream.ReadExactly(chunk, 0, chunk.Length);
+            // ReSharper disable once MustUseReturnValue : Can not happen here, because then the previous read would have failed.
+            stream.Read(chunk, 0, chunk.Length);
             stream.Position += sizeof(UInt32);
             long crc = Crc.Get(chunk);
             if (chunkData.Crc != crc)
@@ -342,7 +343,7 @@ public class Png
     }
 
     private static readonly Dictionary<string, Type> ChunkTypesByName = typeof(IChunkData).Assembly.GetTypes()
-        .Where(x => x != typeof(IChunkData) && x.IsAssignableTo(typeof(IChunkData)))
+        .Where(x => x != typeof(IChunkData) && typeof(IChunkData).IsAssignableFrom(x))
         .ToDictionary(x => ((IChunkData)Activator.CreateInstance(x)!).Name, x => x);
 
     private AbstractChunk LoadChunk(ChunkStart chunkStart, Span<byte> chunk)
@@ -355,7 +356,7 @@ public class Png
 
     private static AbstractChunk LoadChunk(Type t, Span<byte> data)
     {
-        if (!t.IsAssignableTo(typeof(IChunkData)))
+        if (!typeof(IChunkData).IsAssignableFrom(t))
             throw new InvalidOperationException("Only Classes inheriting IChunkData can be loaded.");
 
         Type chunkType = typeof(Chunk<>).MakeGenericType(t);
@@ -409,7 +410,7 @@ public class Png
         InsertMissingFctl();
 
         List<AbstractChunk?> chunks =
-        [
+        [ //TODO: sprinkel in Texts
             _chunks.SpliceOrDefault<Ihdr>(),
             _chunks.SpliceOrDefault("cHRM"),
             _chunks.SpliceOrDefault("cICP"),
@@ -471,9 +472,7 @@ public class Png
     private void UpdateFrames()
     {
         foreach (Frame frame in _frames)
-        {
             frame.FdAt.FrameData = frame.Idat.Data;
-        }
     }
 
     protected virtual void InsertMissingFctl()
@@ -1115,7 +1114,9 @@ public sealed class DisposableAction(Action dispose) : IDisposable
 
         try { _dispose(); }
         catch (Exception)
-        { /* ignored */ }
+        {
+            /* ignored */
+        }
 
         _dispose = null;
     }
@@ -1244,7 +1245,7 @@ public static class PngIdatCodec
 
             PngFilterType.Up => (x, _, b, _) => (byte)(x + b),
 
-            PngFilterType.Average => (x, a, b, _) => (byte)(x + (byte)(((int)a + b) / 2)),
+            PngFilterType.Average => (x, a, b, _) => (byte)(x + (byte)((a + b) / 2)),
 
             PngFilterType.Paeth => (x, a, b, c) => (byte)(x + PaethPredictor(a, b, c)),
 
@@ -1298,7 +1299,7 @@ public static class PngIdatCodec
 
             PngFilterType.Up => (x, _, b, _) => (byte)(x - b),
 
-            PngFilterType.Average => (x, a, b, _) => (byte)(x - (byte)(((int)a + b) / 2)),
+            PngFilterType.Average => (x, a, b, _) => (byte)(x - (byte)((a + b) / 2)),
 
             PngFilterType.Paeth => (x, a, b, c) => (byte)(x - PaethPredictor(a, b, c)),
 
@@ -1306,7 +1307,7 @@ public static class PngIdatCodec
         };
     }
 
-    public static int ComputeBytesPerPixel(ColorType colorType, byte bitDepth)
+    private static int ComputeBytesPerPixel(ColorType colorType, byte bitDepth)
     {
         if (bitDepth < 8)
             return 1; // packed formats: filters operate on bytes, not pixels
@@ -1384,13 +1385,13 @@ public static class PngIdatCodec
 
     private static uint Adler32(byte[] data)
     {
-        const uint MOD = 65521;
+        const uint mod = 65521;
         uint a = 1, b = 0;
 
         foreach (byte t in data)
         {
-            a = (a + t) % MOD;
-            b = (b + a) % MOD;
+            a = (a + t) % mod;
+            b = (b + a) % mod;
         }
 
         return (b << 16) | a;
