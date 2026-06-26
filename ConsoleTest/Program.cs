@@ -17,7 +17,7 @@ using System.Text.RegularExpressions;
 
 List<string> defines = [];
 
-foreach (IGrouping<string, string> group in Directory.GetFiles(@"H:\Projects\pebble-rorschach-v3\resources\images").GroupBy(x => patterns.First(p => p.regex.IsMatch(x)).name))
+foreach (IGrouping<string, string> group in Directory.GetFiles(@"H:\Projects\pebble-rorschach-v3\resources\images\numbers").GroupBy(x => patterns.First(p => p.regex.IsMatch(x)).name))
 {
     int id = 0;
     bool withBlank = patterns.First(p => p.name == group.Key).withBlank;

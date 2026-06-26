@@ -6,10 +6,18 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
 namespace AntiPebbleNG;
+
+internal static class AntiPebbleNGData
+{
+    internal static readonly Dictionary<string, Type> ChunkTypesByName = typeof(AbstractChunk).Assembly.GetTypes()
+        .Where(x => x != typeof(AbstractChunk) && typeof(AbstractChunk).IsAssignableFrom(x))
+        .ToDictionary(x => x.GetCustomAttribute<ChunkAttribute>().Name, x => x);
+}
 
 public class Png
 {
@@ -103,14 +111,14 @@ public class Png
     {
         color ??= Colors.Black;
 
-        _chunks.Add(Chunk.Create(new Ihdr()
+        _chunks.Add(new IhdrChunk
         {
             BitDepth = bitDepth,
             ColorType = colorType,
             Height = height,
             Width = width,
             CompressionMethod = 0,
-        }));
+        });
 
         IColor iColor = color.ConvertTo(colorType, bitDepth);
 
@@ -120,18 +128,18 @@ public class Png
                 image[x, y] = iColor;
 
         byte[] byteData = image.Free();
-        _chunks.Add(Chunk.Create(new Idat
+        _chunks.Add(new IdatChunk
         {
             Data = PngIdatCodec.EncodeIdat(byteData, width, height, bitDepth, colorType)
-        }));
-        _chunks.Add(Chunk.Create(new Iend()));
+        });
+        _chunks.Add(new IendChunk());
 
         Init();
     }
 
     private void Init()
     {
-        Ihdr ihdr = _chunks.First<Ihdr>().Data;
+        IhdrChunk ihdr = _chunks.First<IhdrChunk>();
         Width = ihdr.Width;
         Height = ihdr.Height;
     }
@@ -142,8 +150,8 @@ public class Png
     {
         if (_unlockedImage != null)
             throw new InvalidOperationException("Already unlocked");
-        Ihdr ihdr = _chunks.First<Ihdr>().Data;
-        Idat idat = _chunks.First<Idat>().Data;
+        IhdrChunk ihdr = _chunks.First<IhdrChunk>();
+        IdatChunk idat = _chunks.First<IdatChunk>();
         byte[] pixelData = Unpack(PngIdatCodec.DecodeIdat(idat.Data, ihdr.Width, ihdr.Height, ihdr.BitDepth, ihdr.ColorType), GetBitsPerPixel(ihdr.BitDepth, ihdr.ColorType), (int)ihdr.Width, (int)ihdr.Height);
 
         image = _unlockedImage = GetImage((int)ihdr.Width, (int)ihdr.Height, pixelData, ihdr.BitDepth, ihdr.ColorType);
@@ -238,8 +246,8 @@ public class Png
         if (_unlockedImage == null)
             return;
 
-        Ihdr ihdr = _chunks.First<Ihdr>().Data;
-        Idat idat = _chunks.First<Idat>().Data;
+        IhdrChunk ihdr = _chunks.First<IhdrChunk>();
+        IdatChunk idat = _chunks.First<IdatChunk>();
         byte[] pixelData = _unlockedImage.Free();
         _unlockedImage = null;
         byte[] packedData = Pack(pixelData, GetBitsPerPixel(ihdr.BitDepth, ihdr.ColorType), (int)ihdr.Width, (int)ihdr.Height);
@@ -309,7 +317,7 @@ public class Png
         if (read < chunk.Length)
             throw new FormatException($"Corrupt PNG file loaded. Malformed chunk ending at {stream.Position}.");
 
-        AbstractChunk chunkData = LoadChunk(start, chunk);
+        uint crc = LoadChunk(start.Name, chunk);
 
         if (CheckCrc)
         {
@@ -317,9 +325,9 @@ public class Png
             // ReSharper disable once MustUseReturnValue : Can not happen here, because then the previous read would have failed.
             stream.Read(chunk, 0, chunk.Length);
             stream.Position += sizeof(UInt32);
-            long crc = Crc.Get(chunk);
-            if (chunkData.Crc != crc)
-                throw new Exception($"Corrupt PNG file loaded. Wrong CRC in chunk {_chunks.Count - 1}. Expected {crc:x8}, found {chunkData.Crc:x8}");
+            long crcCalc = Crc.Get(chunk);
+            if (crc != crcCalc)
+                throw new Exception($"Corrupt PNG file loaded. Wrong CRC in chunk {_chunks.Count - 1}. Expected {crcCalc:x8}, found {crc:x8}");
         }
     }
 
@@ -331,47 +339,30 @@ public class Png
         if (chunk.Length < start.Size)
             throw new FormatException($"Corrupt PNG file loaded. Malformed chunk Nr. {_chunks.Count}");
 
-        AbstractChunk chunkData = LoadChunk(start, chunk);
+        uint crc = LoadChunk(start.Name, chunk);
         if (CheckCrc)
         {
-            long crc = Crc.Get(data[..(int)(start.Size + 4)]);
-            if (chunkData.Crc != crc)
-                throw new Exception($"Corrupt PNG file loaded. Wrong CRC in chunk {_chunks.Count - 1}. Expected {crc:x8}, found {chunkData.Crc:x8}");
+            long crcCalc = Crc.Get(data[..(int)(start.Size + 4)]);
+            if (crc != crcCalc)
+                throw new Exception($"Corrupt PNG file loaded. Wrong CRC in chunk {_chunks.Count - 1}. Expected {crcCalc:x8}, found {crc:x8}");
         }
 
         return data[(int)(start.Size + 8)..];
     }
 
-    private static readonly Dictionary<string, Type> ChunkTypesByName = typeof(IChunkData).Assembly.GetTypes()
-        .Where(x => x != typeof(IChunkData) && typeof(IChunkData).IsAssignableFrom(x))
-        .ToDictionary(x => ((IChunkData)Activator.CreateInstance(x)!).Name, x => x);
-
-    private AbstractChunk LoadChunk(ChunkStart chunkStart, Span<byte> chunk)
+    private uint LoadChunk(string chunkName, Span<byte> chunk)
     {
-        AbstractChunk chunkData = LoadChunk(ChunkTypesByName.TryGetValue(chunkStart.Name, out Type? type) ? type : ChunkTypesByName[""], chunk);
-        chunkData.Start = chunkStart;
-        _chunks.Add(chunkData);
-        return chunkData;
-    }
+        Type t = AntiPebbleNGData.ChunkTypesByName.TryGetValue(chunkName, out Type? type) ? type : AntiPebbleNGData.ChunkTypesByName[""];
 
-    private static AbstractChunk LoadChunk(Type t, Span<byte> data)
-    {
-        if (!typeof(IChunkData).IsAssignableFrom(t))
+        if (!typeof(AbstractChunk).IsAssignableFrom(t))
             throw new InvalidOperationException("Only Classes inheriting IChunkData can be loaded.");
 
-        Type chunkType = typeof(Chunk<>).MakeGenericType(t);
-        AbstractChunk chunk = (AbstractChunk)Activator.CreateInstance(chunkType, true)!;
-
-        FieldInfo dataField = chunkType.GetField(nameof(Chunk<Idat>.Data))!;
-        FieldInfo crcField = chunkType.GetField(nameof(Chunk<Idat>.Crc))!;
-
-        data[..^4].Read(t, out object dataValue);
-        dataField.SetValue(chunk, dataValue);
-
-        data[^4..].Read(out UInt32 crc);
-        crcField.SetValue(chunk, crc);
-
-        return chunk;
+        chunk[..^4].Read(t, out object chunkO);
+        AbstractChunk chunkData = (AbstractChunk)chunkO;
+        chunkData.ChunkName = chunkName;
+        _chunks.Add(chunkData);
+        chunk[^4..].Read(out uint crc);
+        return crc;
     }
 
     public void Save(string path) => Save(new FileInfo(path));
@@ -411,7 +402,7 @@ public class Png
 
         List<AbstractChunk?> chunks =
         [ //TODO: sprinkel in Texts
-            _chunks.SpliceOrDefault<Ihdr>(),
+            _chunks.SpliceOrDefault<IhdrChunk>(),
             _chunks.SpliceOrDefault("cHRM"),
             _chunks.SpliceOrDefault("cICP"),
             _chunks.SpliceOrDefault("gAMA"),
@@ -420,49 +411,47 @@ public class Png
             _chunks.SpliceOrDefault("cLLI"),
             _chunks.SpliceOrDefault("sBIT"),
             _chunks.SpliceOrDefault("sRGB"),
-            _chunks.SpliceOrDefault<Plte>(),
-            _chunks.SpliceOrDefault<Trns>(),
-            _chunks.SpliceOrDefault<Bkgd>(),
+            _chunks.SpliceOrDefault<PlteChunk>(),
+            _chunks.SpliceOrDefault<TrnsChunk>(),
+            _chunks.SpliceOrDefault<BkgdChunk>(),
             _chunks.SpliceOrDefault("hIST"),
-            _chunks.SpliceOrDefault<Actl>() ?? new Chunk<Actl>( new Actl {NumFrames = 1} ),
+            _chunks.SpliceOrDefault<ActlChunk>() ?? new ActlChunk{NumFrames = 1},
             _chunks.SpliceOrDefault("eXIF"),
-            _chunks.SpliceOrDefault<Fctl>(),
+            _chunks.SpliceOrDefault<FctlChunk>(),
             _chunks.SpliceOrDefault("pHYs"),
             _chunks.SpliceOrDefault("sPLT"),
-            _chunks.SpliceOrDefault<Idat>(),
-
-            //all other fcTL and IDAT, but IDAT as fDAT.
-
-            _chunks.SpliceOrDefault<Iend>(),
+            _chunks.SpliceOrDefault<IdatChunk>(),
+            //Insert rest here
+            _chunks.SpliceOrDefault<IendChunk>(),
         ];
         List<AbstractChunk> orderedChunks = [.. chunks.OfType<AbstractChunk>()];
 
-        foreach (Chunk<Idat> idat in _chunks.OfType<Idat>())
+        foreach (IdatChunk idat in _chunks.OfType<IdatChunk>().ToList())
         {
-            _chunks[_chunks.IndexOf(idat)] = new Chunk<Fdat>(new Fdat
+            _chunks[_chunks.IndexOf(idat)] = new FdatChunk
             {
-                FrameData = idat.Data.Data
-            });
+                FrameData = idat.Data
+            };
         }
 
         orderedChunks.InsertRange(orderedChunks.Count - 1, _chunks);
 
         UInt32 id = 0;
-        foreach ((Chunk<Fdat>? fdat, Chunk<Fctl>? fctl) in orderedChunks.OfType<Fdat, Fctl>())
+        foreach ((FdatChunk? fdat, FctlChunk? fctl) in orderedChunks.OfType<FdatChunk, FctlChunk>())
         {
-            if (fdat != null) fdat.Data.SequenceNumber = id++;
-            if (fctl != null) fctl.Data.SequenceNumber = id++;
+            if (fdat != null) fdat.SequenceNumber = id++;
+            if (fctl != null) fctl.SequenceNumber = id++;
         }
 
-        Chunk<Actl> actl = orderedChunks.First<Actl>();
-        actl.Data.NumFrames = (UInt32)orderedChunks.OfType<Fctl>().Count();
-        if (actl.Data.NumFrames < 2)
+        ActlChunk actl = orderedChunks.First<ActlChunk>();
+        actl.NumFrames = (UInt32)orderedChunks.OfType<FctlChunk>().Count();
+        if (actl.NumFrames < 2)
             orderedChunks.Remove(actl);
 
         if (StripDecoration)
         {
             //Safe to copy-flag = true, so only metadata.
-            foreach (AbstractChunk chunk in _chunks.Where(c => char.IsLower(c.Start.Name[^1])))
+            foreach (AbstractChunk chunk in _chunks.Where(c => char.IsLower(c.ChunkName[^1])))
                 orderedChunks.Remove(chunk);
         }
 
@@ -477,31 +466,31 @@ public class Png
 
     protected virtual void InsertMissingFctl()
     {
-        if (_chunks.FirstOrDefault<Fdat>() == null)
+        if (_chunks.FirstOrDefault<FdatChunk>() == null)
             return;
 
-        Chunk<Ihdr> ihdr = _chunks.First<Ihdr>();
+        IhdrChunk ihdr = _chunks.First<IhdrChunk>();
         AbstractChunk? fctl = null;
         foreach (AbstractChunk chunk in _chunks.ToList())
         {
-            switch (chunk.OData)
+            switch (chunk)
             {
-                case Fctl:
+                case FctlChunk:
                     fctl = chunk;
                     break;
-                case Idat or Fdat when fctl != null:
+                case IdatChunk or FdatChunk when fctl != null:
                     fctl = null;
                     break;
-                case Idat or Fdat:
-                    _chunks.Insert(_chunks.IndexOf(chunk), new Chunk<Fctl>(new Fctl
+                case IdatChunk or FdatChunk:
+                    _chunks.Insert(_chunks.IndexOf(chunk), new FctlChunk
                     {
-                        Width = ihdr.Data.Width,//should be from IHDR of Image
-                        Height = ihdr.Data.Height,//should be from IHDR of Image
+                        Width = ihdr.Width,//should be from IHDR of Image
+                        Height = ihdr.Height,//should be from IHDR of Image
                         DelayNum = _defaultNum,
                         DelayDen = _defaultDen,
                         DisposeOp = DisposeOp.ApngDisposeOpNone,
                         BlendOp = BlendOp.ApngBlendOpOver
-                    }));
+                    });
                     break;
             }
         }
@@ -511,12 +500,12 @@ public class Png
 
     public void AddFrame(Png image)
     {
-        Ihdr ihdr = image._chunks.First<Ihdr>().Data;
-        Idat idat = image._chunks.First<Idat>().Data;
-        Fctl fctl;
-        Fdat fdAt;
+        IhdrChunk ihdr = image._chunks.First<IhdrChunk>();
+        IdatChunk idat = image._chunks.First<IdatChunk>();
+        FctlChunk fctl;
+        FdatChunk fdAt;
 
-        _chunks.Add(Chunk.Create(fctl = new Fctl
+        _chunks.Add(fctl = new FctlChunk
         {
             Width = ihdr.Width,
             Height = ihdr.Height,
@@ -526,30 +515,41 @@ public class Png
             DelayDen = _defaultDen,
             DisposeOp = DisposeOp.ApngDisposeOpNone,
             BlendOp = BlendOp.ApngBlendOpOver
-        }));
+        });
 
-        _chunks.Add(Chunk.Create(fdAt = new Fdat { FrameData = idat.Data }));
+        _chunks.Add(fdAt = new FdatChunk { FrameData = idat.Data });
 
         Frame frame = new(fctl, fdAt, ihdr, idat);
         _frames.Add(frame);
     }
 }
 
-public class Frame(Fctl fctl, Fdat fdAt, Ihdr ihdr, Idat idat)
+public class Frame(FctlChunk fctl, FdatChunk fdAt, IhdrChunk ihdr, IdatChunk idat)
 {
-    internal Fctl Fctl = fctl;
-    internal Fdat FdAt = fdAt;
-    internal Ihdr Ihdr = ihdr;
-    internal Idat Idat = idat;
+    internal FctlChunk Fctl = fctl;
+    internal FdatChunk FdAt = fdAt;
+    internal IhdrChunk Ihdr = ihdr;
+    internal IdatChunk Idat = idat;
 }
 
 public abstract class AbstractChunk
 {
-    public ChunkStart Start;
-    public UInt32 Crc;
-    public abstract object OData { get; }
+    public string ChunkName { get; internal set; }
 
-    public abstract void Save(Stream stream);
+    protected AbstractChunk()
+    {
+        ChunkName = GetType().GetCustomAttribute<ChunkAttribute>().Name;
+    }
+
+    public void Save(Stream stream)
+    {
+        Span<byte> name = ChunkName.Write();
+        Span<byte> data = this.Write();
+        stream.Write(((UInt32)data.Length).Write());
+        stream.Write(name);
+        stream.Write(data);
+        stream.Write(Crc.Get([.. name, .. data]).Write());
+    }
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -605,7 +605,7 @@ internal static class SpanExtension
                 return bytes[s.Length..];
             }
 
-            value = Activator.CreateInstance(type)!;
+            value = Activator.CreateInstance(type, true)!;
 
             foreach (FieldInfo fieldInfo in type.GetFields(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic))
             {
@@ -705,41 +705,6 @@ internal static class SpanExtension
     }
 }
 
-public static class Chunk
-{
-    public static Chunk<T> Create<T>(T data) where T : IChunkData => new(data);
-}
-public class Chunk<T> : AbstractChunk where T : IChunkData
-{
-    public override object OData => Data;
-    public T Data = default!;
-
-    private Chunk() { }
-
-    public Chunk(T data)
-    {
-        if (data is Unknown)
-            throw new ArgumentException("It is not allowed to create new Unknown Chunks.");
-        Data = data;
-        Start = new ChunkStart(data.Name);
-    }
-
-    public override void Save(Stream stream)
-    {
-        Span<byte> name = Start.Name.Write();
-        Span<byte> data = Data.Write();
-        stream.Write((Start.Size = (UInt32)data.Length).Write());
-        stream.Write(name);
-        stream.Write(data);
-        stream.Write((Crc = AntiPebbleNG.Crc.Get([.. name, .. data])).Write());
-    }
-}
-
-public interface IChunkData
-{
-    public string Name { get; }
-}
-
 public enum ColorType : byte
 {
     /// <summary>
@@ -764,10 +729,15 @@ public enum ColorType : byte
     TruecolorWithAlpha = 6
 }
 
-public class Ihdr : IChunkData
+[AttributeUsage(AttributeTargets.Class)]
+public class ChunkAttribute(string name) : Attribute
 {
-    public string Name => "IHDR";
+    public readonly string Name = name;
+}
 
+[Chunk("IHDR")]
+public class IhdrChunk : AbstractChunk
+{
     public uint Width;
     public uint Height;
     public byte BitDepth;
@@ -777,37 +747,32 @@ public class Ihdr : IChunkData
     public byte InterlaceMethod;
 }
 
-public class Plte : IChunkData
+[Chunk("PLTE")]
+public class PlteChunk : AbstractChunk
 {
-    public string Name => "PLTE";
-
     public PalletColor[] Colors = null!;
 }
 
-public class Idat : IChunkData
+[Chunk("IDAT")]
+public class IdatChunk : AbstractChunk
 {
-    public string Name => "IDAT";
-
     public byte[] Data = null!;
 }
 
-public class Iend : IChunkData
-{
-    public string Name => "IEND";
-}
+[Chunk("IEND")]
+public class IendChunk : AbstractChunk
+{ }
 
-public class Actl : IChunkData
+[Chunk("acTL")]
+public class ActlChunk : AbstractChunk
 {
-    public string Name => "acTL";
-
     public UInt32 NumFrames;
     public UInt32 NumPlays;
 }
 
-public class Fctl : IChunkData
+[Chunk("fcTL")]
+public class FctlChunk : AbstractChunk
 {
-    public string Name => "fcTL";
-
     public UInt32 SequenceNumber;
     public UInt32 Width;
     public UInt32 Height;
@@ -832,41 +797,38 @@ public enum BlendOp : byte
     ApngBlendOpOver = 1,
 }
 
-public class Fdat : IChunkData
+[Chunk("fdAT")]
+public class FdatChunk : AbstractChunk
 {
-    public string Name => "fdAT";
-
     public UInt32 SequenceNumber;
     public byte[] FrameData = null!;
 }
 
-public class Text : IChunkData
+[Chunk("tEXt")]
+public class TextChunk : AbstractChunk
 {
-    public string Name => "tEXt";
-
     public string Value = null!;
 
     public string Keyword => Value.Split((char)0)[0];
     public string Message => Value.Split((char)0)[1];
 }
 
-public class Trns : IChunkData
+[Chunk("tRNS")]
+public class TrnsChunk : AbstractChunk
 {
-    public string Name => "tRNS";
-
     public byte[] ColorData = null!;
 }
 
-public class Bkgd : IChunkData
+[Chunk("bKGD")]
+public class BkgdChunk : AbstractChunk
 {
-    public string Name => "bKGD";
-
     public byte[] ColorData = null!;
 }
 
-public class Unknown : IChunkData
+[Chunk("")]
+public class UnknownChunk : AbstractChunk
 {
-    public string Name => "";
+    internal UnknownChunk() { }
 
     public byte[] Data = null!;
 }
@@ -1124,27 +1086,23 @@ public sealed class DisposableAction(Action dispose) : IDisposable
 
 public static class ChunkListExtension
 {
-    public static IEnumerable<AbstractChunk> OfType(this IEnumerable<AbstractChunk> chunks, string type)
-        => chunks.Where(c => c.Start.Name == type);
+    public static IEnumerable<(T1?, T2?)> OfType<T1, T2>(this IEnumerable<AbstractChunk> chunks) where T1 : AbstractChunk where T2 : AbstractChunk
+        => chunks.Where(c => c is T1 or T2).Select(c => (c as T1, c as T2));
 
-    public static IEnumerable<Chunk<T>> OfType<T>(this IEnumerable<AbstractChunk> chunks) where T : IChunkData
-        => chunks.Where(c => c.OData is T).Select(c => (c as Chunk<T>)!);
+    public static T First<T>(this IEnumerable<AbstractChunk> chunks) where T : AbstractChunk
+        => chunks.OfType<T>().First();
 
-    public static IEnumerable<(Chunk<T1>?, Chunk<T2>?)> OfType<T1, T2>(this IEnumerable<AbstractChunk> chunks) where T1 : IChunkData where T2 : IChunkData
-        => chunks.Where(c => c.OData is T1 or T2).Select(c => (c as Chunk<T1>, c as Chunk<T2>));
-
-    public static Chunk<T> First<T>(this IEnumerable<AbstractChunk> chunks) where T : IChunkData
-        => (chunks.First(c => c.OData is T) as Chunk<T>)!;
-
-    public static Chunk<T>? FirstOrDefault<T>(this IEnumerable<AbstractChunk> chunks) where T : IChunkData
-        => chunks.FirstOrDefault(c => c.OData is T) as Chunk<T>;
+    public static T? FirstOrDefault<T>(this IEnumerable<AbstractChunk> chunks) where T : AbstractChunk
+        => chunks.OfType<T>().FirstOrDefault();
 
     public static AbstractChunk? FirstOrDefault(this IEnumerable<AbstractChunk> chunks, string type)
-        => chunks.FirstOrDefault(c => c.Start.Name == type);
-
-    public static Chunk<T>? SpliceOrDefault<T>(this IList<AbstractChunk> chunks) where T : IChunkData
     {
-        Chunk<T>? value = chunks.FirstOrDefault(c => c.OData is T) as Chunk<T>;
+        return chunks.FirstOrDefault(c => c.ChunkName == type);
+    }
+
+    public static T? SpliceOrDefault<T>(this IList<AbstractChunk> chunks) where T : AbstractChunk
+    {
+        T? value = chunks.FirstOrDefault<T>();
         if (value != null)
             chunks.Remove(value);
         return value;
@@ -1152,7 +1110,7 @@ public static class ChunkListExtension
 
     public static AbstractChunk? SpliceOrDefault(this IList<AbstractChunk> chunks, string type)
     {
-        AbstractChunk? value = chunks.FirstOrDefault(c => c.Start.Name == type);
+        AbstractChunk? value = chunks.FirstOrDefault(c => c.ChunkName == type);
         if (value != null)
             chunks.Remove(value);
         return value;
