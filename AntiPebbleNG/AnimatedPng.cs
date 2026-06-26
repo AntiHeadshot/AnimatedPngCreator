@@ -7,7 +7,6 @@ using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Security.Principal;
 using System.Text;
 
 namespace AntiPebbleNG;
@@ -594,23 +593,23 @@ internal static class SpanExtension
 public enum ColorType : byte
 {
     /// <summary>
-    /// Allows <see cref="Ihdr.BitDepth"/> of 1, 2, 4, 8 and 16
+    /// Allows <see cref="IhdrChunk.BitDepth"/> of 1, 2, 4, 8 and 16
     /// </summary>
     Greyscale = 0,
     /// <summary>
-    /// Allows <see cref="Ihdr.BitDepth"/> of 8 and 16
+    /// Allows <see cref="IhdrChunk.BitDepth"/> of 8 and 16
     /// </summary>
     Truecolor = 2,
     /// <summary>
-    /// Allows <see cref="Ihdr.BitDepth"/> of 1, 2, 4 and 8
+    /// Allows <see cref="IhdrChunk.BitDepth"/> of 1, 2, 4 and 8
     /// </summary>
     IndexedColor = 3,
     /// <summary>
-    /// Allows <see cref="Ihdr.BitDepth"/> of 8 and 16
+    /// Allows <see cref="IhdrChunk.BitDepth"/> of 8 and 16
     /// </summary>
     GreyscaleWithAlpha = 4,
     /// <summary>
-    /// Allows <see cref="Ihdr.BitDepth"/> of 8 and 16
+    /// Allows <see cref="IhdrChunk.BitDepth"/> of 8 and 16
     /// </summary>
     TruecolorWithAlpha = 6
 }
@@ -859,16 +858,10 @@ public static class ColorExtension
     }
 }
 
-public class ColorAttribute : Attribute
+public class ColorAttribute(ColorType colorType, byte bitDepth) : Attribute 
 {
-    public readonly ColorType ColorType;
-    public readonly byte BitDepth;
-
-    public ColorAttribute(ColorType colorType, byte bitDepth)
-    {
-        ColorType = colorType;
-        BitDepth = bitDepth;
-    }
+    public readonly ColorType ColorType = colorType;
+    public readonly byte BitDepth = bitDepth;
 }
 
 [DebuggerDisplay("{Value,nq}")]
