@@ -36,7 +36,7 @@ foreach (IGrouping<string, string> group in Directory.GetFiles(@"H:\Projects\peb
     Png firstImg;
 
     if (withBlank)
-        firstImg = new(images[0].Width, images[0].Height, ColorType.Greyscale, 2, Colors.Black);
+        firstImg = Png.Create(images[0].Width, images[0].Height, ColorType.Greyscale, 2, Colors.Black);
     else
     {
         firstImg = images[0];
