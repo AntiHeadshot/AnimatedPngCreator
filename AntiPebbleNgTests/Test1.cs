@@ -58,22 +58,52 @@ class PngSuiteTests
     public void PngSuite_File_ShouldRoundtripCorrectly(string name)
     {
         string file = Path.Combine(SuitePath, name + ".png");
-
-        using var original = new Bitmap(file);
-
-        var png = new Png(file);
-        using (var _ = png.Unlock(out Image image))
+        int exceptionInPng = 0;
+        try
         {
+            var png = new Png(file);
 
+            exceptionInPng = 1;
+
+            using (var _ = png.Unlock(out Image image))
+            {
+
+            }
+
+            byte[] encoded = png.Save();
+
+            exceptionInPng = 2;
+
+            using var ms = new MemoryStream(encoded);
+
+            using var roundtrip = new Bitmap(ms);
+
+            using var original = new Bitmap(file);
+
+            exceptionInPng = 3;
+
+            AreEqual(original, roundtrip, name);
         }
-        byte[] encoded = png.Save();
-
-        using var ms = new MemoryStream(encoded);
-        using var roundtrip = new Bitmap(ms);
-
-        AreEqual(original, roundtrip, name);
+        catch (Exception exp)
+        {
+            if (exceptionInPng == 1)
+                Assert.Fail("Exception in Png but in Unlock.");
+            else if (exceptionInPng == 2)
+                Assert.Fail("Exception in System.Drawing, but not in Png.");
+            else if (exceptionInPng == 3)
+                Assert.Fail(exp.Message);
+            else
+                try
+                {
+                    using var original = new Bitmap(file);
+                    Assert.Fail("Exception in Png, but not in System.Drawing.");
+                }
+                catch (Exception exd)
+                {
+                    // ignored
+                }
+        }
     }
-
 
     private static void AreEqual(Bitmap expected, Bitmap actual, string name)
     {

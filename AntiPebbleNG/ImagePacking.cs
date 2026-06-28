@@ -22,7 +22,7 @@ public static class ImagePacking
                 b |= (byte)((pixels[p++] & mask) << bit);
             packed[i] = b;
 
-            if (stride <= 0)
+            if (stride < 0)
                 stride = (int)(width - 1);
         }
         return packed;
@@ -45,7 +45,7 @@ public static class ImagePacking
                 pixels[p++] = (byte)((b >> bit) & mask);
             }
 
-            if (stride <= 0)
+            if (stride < 0)
                 stride = (int)(width - 1);
         }
         return pixels;
