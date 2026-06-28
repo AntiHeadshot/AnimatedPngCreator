@@ -23,6 +23,9 @@ public class Png
 
     public uint Width { get; private set; }
     public uint Height { get; private set; }
+    public byte BitDepth { get; private set; }
+    public ColorType ColorType { get; private set; }
+    public ColorRgba8[] Palette { get; private set; }
 
     private ushort _defaultNum = 1;
     private ushort _defaultDen = 100;
@@ -49,12 +52,17 @@ public class Png
         Init();
     }
 
-    private Png() { }
+    private Png() { Palette = []; }
 
-    public static Png Create(uint width, uint height, ColorType colorType = ColorType.TruecolorWithAlpha, byte bitDepth = 8, IColor? color = null)
+    public static Png Create(uint width, uint height, ColorType colorType = ColorType.TruecolorWithAlpha, byte bitDepth = 8, ColorRgba8[]? palette = null, IColor? fillColor = null)
     {
+        if (palette == null && colorType == ColorType.IndexedColor)
+            throw new ArgumentException("IndexedColor set, but no palette provided", nameof(palette));
+        if (1 << (bitDepth - 1) < (palette?.Length ?? 0))
+            throw new ArgumentException($"palette length {palette!.Length} is too big for bitDepth {bitDepth} ({1 << (bitDepth - 1)} possible values)", nameof(bitDepth));
+
         Png png = new();
-        color ??= Colors.Black;
+        fillColor ??= Colors.Black;
 
         png._chunks.Add(new IhdrChunk
         {
@@ -65,14 +73,30 @@ public class Png
             CompressionMethod = 0,
         });
 
-        IColor iColor = color.ConvertTo(colorType, bitDepth);
+        if (palette?.Length > 0)
+        {
+            png._chunks.Add(new PlteChunk
+            {
+                Colors = [.. palette.Select(c => new PalletColor { R = c.R, G = c.G, B = c.B })]
+            });
 
-        Image image = Image.Create(width, height, new byte[Marshal.SizeOf(iColor) * width * height], bitDepth, colorType);
+            if (palette.Any(c => c.A != byte.MaxValue))
+            {
+                png._chunks.Add(new TrnsChunk
+                {
+                    ColorData = [.. palette.Select(c => c.A)]
+                });
+            }
+        }
+
+        IColor iColor = fillColor.ConvertTo(colorType, bitDepth, palette!);
+
+        Image image = Image.Create(width, height, new byte[Marshal.SizeOf(iColor) * width * height], bitDepth, colorType, palette!);
         for (int y = 0; y < image.Height; y++)
             for (int x = 0; x < image.Width; x++)
                 image[x, y] = iColor;
 
-        byte[] byteData = image.Free();
+        byte[] byteData = image.GetBytes();
         png._chunks.Add(new IdatChunk { ImageData = PngIdatCodec.EncodeIdat(byteData, width, height, bitDepth, colorType) });
         png._chunks.Add(new IendChunk());
 
@@ -85,6 +109,14 @@ public class Png
         IhdrChunk ihdr = _chunks.First<IhdrChunk>();
         Width = ihdr.Width;
         Height = ihdr.Height;
+        BitDepth = ihdr.BitDepth;
+        ColorType = ihdr.ColorType;
+
+        PlteChunk? plte = _chunks.FirstOrDefault<PlteChunk>();
+        TrnsChunk? trns = _chunks.FirstOrDefault<TrnsChunk>();
+
+        Palette = plte?.Colors.Select((p, i) =>
+            new ColorRgba8(p.R, p.G, p.B, trns?.ColorData[i] ?? byte.MaxValue)).ToArray() ?? [];
     }
 
     private void Load(Stream stream)
@@ -310,7 +342,7 @@ public class Png
             BlendOp = BlendOp.ApngBlendOpOver
         });
 
-        _chunks.Add(new FdatChunk { ImageData = PngIdatCodec.EncodeIdat(image.Free(), image.Width, image.Height, image.BitDepth, image.ColorType) });
+        _chunks.Add(new FdatChunk { ImageData = PngIdatCodec.EncodeIdat(image.GetBytes(), image.Width, image.Height, image.BitDepth, image.ColorType) });
     }
 
     private readonly HashSet<uint> _unlockedImages = [];
@@ -320,20 +352,16 @@ public class Png
         if (!_unlockedImages.Add(frameNr))
             throw new InvalidOperationException("Already unlocked");
         IImageDataCunk idat = _chunks.OfType<IImageDataCunk>().Skip((int)frameNr).First();
-        IhdrChunk ihdr = _chunks.First<IhdrChunk>();
-        FctlChunk? fctl = _chunks.OfType<FctlChunk>()
-            .Where(f => f.SequenceNumber < (idat as FdatChunk)?.SequenceNumber)
-            .OrderByDescending(f => f.SequenceNumber)
-            .FirstOrDefault();
-        byte[] pixelData = PngIdatCodec.DecodeIdat(idat.ImageData, fctl?.Width ?? ihdr.Width, fctl?.Height ?? ihdr.Height, ihdr.BitDepth, ihdr.ColorType);
-        Image cachedImage = image = Image.Create(fctl?.Width ?? ihdr.Width, fctl?.Height ?? ihdr.Height, pixelData, ihdr.BitDepth, ihdr.ColorType);
+        IImageMetadataCunk ihdr = _chunks.TakeWhile(x => x != idat).OfType<IImageMetadataCunk>().Last();
+        byte[] pixelData = PngIdatCodec.DecodeIdat(idat.ImageData, ihdr.Width, ihdr.Height, BitDepth, ColorType);
+        Image cachedImage = image = Image.Create(ihdr.Width, ihdr.Height, pixelData, BitDepth, ColorType, Palette);
         return new DisposableAction(() => Lock(cachedImage, frameNr));
     }
 
     private void Lock(Image image, uint frameNr)
     {
         IImageDataCunk idat = _chunks.OfType<IImageDataCunk>().Skip((int)frameNr).First();
-        idat.ImageData = PngIdatCodec.EncodeIdat(image.Free(), image.Width, image.Height, image.BitDepth, image.ColorType);
+        idat.ImageData = PngIdatCodec.EncodeIdat(image.GetBytes(), image.Width, image.Height, image.BitDepth, image.ColorType);
         _unlockedImages.Remove(frameNr);
     }
 

@@ -7,10 +7,10 @@ using System.Text;
 namespace AntiPebbleNG;
 
 [Chunk("IHDR")]
-public class IhdrChunk : AbstractChunk
+public class IhdrChunk : AbstractChunk, IImageMetadataCunk
 {
-    public uint Width;
-    public uint Height;
+    public uint Width { get; set; }
+    public uint Height { get; set; }
     public byte BitDepth;
     public ColorType ColorType;
     public byte CompressionMethod;
@@ -24,11 +24,11 @@ public class PlteChunk : AbstractChunk
     public PalletColor[] Colors = null!;
 }
 
-public readonly struct PalletColor : IColor
+public struct PalletColor : IColor
 {
-    public readonly byte R;
-    public readonly byte G;
-    public readonly byte B;
+    public byte R;
+    public byte G;
+    public byte B;
 }
 
 [Chunk("IDAT")]
@@ -49,11 +49,11 @@ public class ActlChunk : AbstractChunk
 }
 
 [Chunk("fcTL")]
-public class FctlChunk : AbstractChunk
+public class FctlChunk : AbstractChunk, IImageMetadataCunk
 {
     public uint SequenceNumber;
-    public uint Width;
-    public uint Height;
+    public uint Width { get; set; }
+    public uint Height { get; set; }
     public uint XOffset;
     public uint YOffset;
     public ushort DelayNum;
@@ -123,6 +123,12 @@ public class UnknownChunk : AbstractChunk
 public interface IImageDataCunk
 {
     byte[] ImageData { get; set; }
+}
+
+public interface IImageMetadataCunk
+{
+    uint Width { get; set; }
+    uint Height { get; set; }
 }
 
 public abstract class AbstractChunk
