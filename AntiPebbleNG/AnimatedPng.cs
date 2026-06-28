@@ -266,12 +266,6 @@ public class Png
         _chunks = orderedChunks;
     }
 
-    private void UpdateFrames()
-    {
-        foreach (Frame frame in _frames)
-            frame.FdAt.ImageData = frame.Idat.ImageData;
-    }
-
     protected virtual void InsertMissingFctl()
     {
         if (_chunks.FirstOrDefault<FdatChunk>() == null)
@@ -324,8 +318,16 @@ public class Png
             BlendOp = BlendOp.ApngBlendOpOver
         });
 
+        //TODO: convert Image to same Format as main Image
         _chunks.Add(fdAt = new FdatChunk { ImageData = idat.ImageData });
         _frames.Add(new Frame(fdAt, idat));
+    }
+
+    private void UpdateFrames()
+    {
+        //TODO: convert Image to same Format as main Image
+        foreach (Frame frame in _frames)
+            frame.FdAt.ImageData = frame.Idat.ImageData;
     }
 
     public void AddFrame(Image image)
@@ -342,6 +344,7 @@ public class Png
             BlendOp = BlendOp.ApngBlendOpOver
         });
 
+        //TODO: convert Image to same Format as main Image
         _chunks.Add(new FdatChunk { ImageData = PngIdatCodec.EncodeIdat(image.GetBytes(), image.Width, image.Height, image.BitDepth, image.ColorType) });
     }
 
