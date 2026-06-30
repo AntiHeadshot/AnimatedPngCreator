@@ -25,7 +25,7 @@ public class Png
     public uint Height { get; private set; }
     public byte BitDepth { get; private set; }
     public ColorType ColorType { get; private set; }
-    public ColorRgba8[] Palette { get; private set; }
+    public ColorRgba8[] Palette { get; private set; } = null!;//Is set from Init()
 
     private ushort _defaultNum = 1;
     private ushort _defaultDen = 100;
@@ -106,17 +106,40 @@ public class Png
 
     private void Init()
     {
+        if(_chunks.FirstOrDefault<IdatChunk>() == null)
+            throw new FormatException("PNG without image data. Seems to be corrupted.");
+
         IhdrChunk ihdr = _chunks.First<IhdrChunk>();
         Width = ihdr.Width;
         Height = ihdr.Height;
         BitDepth = ihdr.BitDepth;
         ColorType = ihdr.ColorType;
 
+        if(!Enum.IsDefined(typeof(ColorType), ColorType))
+            throw new FormatException("PNG with unknown ColorType.");
+
+        if(BitDepth == 0)
+            throw new FormatException("PNG with BitDepth of 0.");
+        //Is not power of 2
+        else if((BitDepth & (BitDepth - 1)) != 0)
+            throw new FormatException("PNG with BitDepth other than a power of 2.");
+
         PlteChunk? plte = _chunks.FirstOrDefault<PlteChunk>();
         TrnsChunk? trns = _chunks.FirstOrDefault<TrnsChunk>();
 
         Palette = plte?.Colors.Select((p, i) =>
             new ColorRgba8(p.R, p.G, p.B, trns?.ColorData[i] ?? byte.MaxValue)).ToArray() ?? [];
+
+        SquishFrames();
+    }
+
+    private void SquishFrames(){
+        List<IdatChunk> idats = [.._chunks.OfType<IdatChunk>()];
+        idats[0].ImageData = [..idats.SelectMany(x=>x.ImageData)];
+        foreach(IdatChunk idat in idats.Skip(1))
+            _chunks.Remove(idat);
+
+        //TODO: Squish fdAt Frames
     }
 
     private void Load(Stream stream)
@@ -204,10 +227,10 @@ public class Png
         PrepareForSave();
 
         stream.Write(Signature);
+
+        //TODO separate big IDAT and fDAT into multiples
         foreach (AbstractChunk abstractChunk in _chunks)
-        {
             abstractChunk.Save(stream);
-        }
     }
 
     private void PrepareForSave()
@@ -235,14 +258,14 @@ public class Png
             _chunks.SpliceOrDefault<FctlChunk>(),
             _chunks.SpliceOrDefault("pHYs"),
             _chunks.SpliceOrDefault("sPLT"),
-            _chunks.SpliceOrDefault<IdatChunk>(),
+            .._chunks.OfType<IdatChunk>(),
             //Insert rest here
             _chunks.SpliceOrDefault<IendChunk>(),
         ];
         List<AbstractChunk> orderedChunks = [.. chunks.OfType<AbstractChunk>()];
 
-        foreach (IdatChunk idat in _chunks.OfType<IdatChunk>().ToList())
-            _chunks[_chunks.IndexOf(idat)] = new FdatChunk(idat.ImageData);
+        // foreach (IdatChunk idat in _chunks.OfType<IdatChunk>().ToList())
+        //     _chunks[_chunks.IndexOf(idat)] = new FdatChunk(idat.ImageData);
 
         orderedChunks.InsertRange(orderedChunks.Count - 1, _chunks);
 
