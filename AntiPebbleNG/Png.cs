@@ -84,7 +84,8 @@ public class Png
             {
                 png._chunks.Add(new TrnsChunk
                 {
-                    ColorData = [.. palette.Select(c => c.A)]
+                    //Remaining A=255s do not have to be present.
+                    ColorData = [.. palette.Select(c => c.A).Reverse().SkipWhile(x => x == 255).Reverse()]
                 });
             }
         }
@@ -106,7 +107,7 @@ public class Png
 
     private void Init()
     {
-        if(_chunks.FirstOrDefault<IdatChunk>() == null)
+        if (_chunks.FirstOrDefault<IdatChunk>() == null)
             throw new FormatException("PNG without image data. Seems to be corrupted.");
 
         IhdrChunk ihdr = _chunks.First<IhdrChunk>();
@@ -115,28 +116,29 @@ public class Png
         BitDepth = ihdr.BitDepth;
         ColorType = ihdr.ColorType;
 
-        if(!Enum.IsDefined(typeof(ColorType), ColorType))
+        if (!Enum.IsDefined(typeof(ColorType), ColorType))
             throw new FormatException("PNG with unknown ColorType.");
 
-        if(BitDepth == 0)
+        if (BitDepth == 0)
             throw new FormatException("PNG with BitDepth of 0.");
         //Is not power of 2
-        else if((BitDepth & (BitDepth - 1)) != 0)
+        else if ((BitDepth & (BitDepth - 1)) != 0)
             throw new FormatException("PNG with BitDepth other than a power of 2.");
 
         PlteChunk? plte = _chunks.FirstOrDefault<PlteChunk>();
         TrnsChunk? trns = _chunks.FirstOrDefault<TrnsChunk>();
 
         Palette = plte?.Colors.Select((p, i) =>
-            new ColorRgba8(p.R, p.G, p.B, trns?.ColorData[i] ?? byte.MaxValue)).ToArray() ?? [];
+            new ColorRgba8(p.R, p.G, p.B, trns?.ColorData.Length > i ? trns.ColorData[i] : byte.MaxValue)).ToArray() ?? [];
 
         SquishFrames();
     }
 
-    private void SquishFrames(){
-        List<IdatChunk> idats = [.._chunks.OfType<IdatChunk>()];
-        idats[0].ImageData = [..idats.SelectMany(x=>x.ImageData)];
-        foreach(IdatChunk idat in idats.Skip(1))
+    private void SquishFrames()
+    {
+        List<IdatChunk> idats = [.. _chunks.OfType<IdatChunk>()];
+        idats[0].ImageData = [.. idats.SelectMany(x => x.ImageData)];
+        foreach (IdatChunk idat in idats.Skip(1))
             _chunks.Remove(idat);
 
         //TODO: Squish fdAt Frames
@@ -258,7 +260,7 @@ public class Png
             _chunks.SpliceOrDefault<FctlChunk>(),
             _chunks.SpliceOrDefault("pHYs"),
             _chunks.SpliceOrDefault("sPLT"),
-            .._chunks.OfType<IdatChunk>(),
+            _chunks.SpliceOrDefault<IdatChunk>(),
             //Insert rest here
             _chunks.SpliceOrDefault<IendChunk>(),
         ];

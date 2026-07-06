@@ -14,8 +14,12 @@ public abstract class Image(in uint width, in uint height, ColorType colorType, 
     public readonly byte BitDepth = bitDepth;
     public readonly ColorRgba8[] Palette = palette;
 
+    public IColor this[int x, int y]
+    {
+        get => GetPixel(x, y);
+        set => SetPixel(x, y, value);
+    }
 
-    public abstract IColor this[int x, int y] { get; set; }
     public abstract IColor GetPixel(int x, int y);
     public abstract void SetPixel(int x, int y, IColor color);
     internal abstract byte[] GetBytes();
@@ -66,13 +70,7 @@ public class Image<TColor>(uint width, uint height, byte[] data, ColorRgba8[] pa
         return MemoryMarshal.Cast<TColor, byte>(_data).ToArray();
     }
 
-    public override IColor this[int x, int y]
-    {
-        get => GetPixel(x, y);
-        set => SetPixel(x, y, value);
-    }
-
     public override IColor GetPixel(int x, int y) => _data[x + y * Width];
 
-    public override void SetPixel(int x, int y, IColor color) => _data[x + y * Width] = (TColor)color;
+    public override void SetPixel(int x, int y, IColor color) => _data[x + y * Width] = (TColor)color.ConvertTo(this);
 }
