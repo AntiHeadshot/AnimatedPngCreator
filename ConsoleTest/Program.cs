@@ -2,6 +2,30 @@
 using System.Dynamic;
 using System.Text.RegularExpressions;
 
+List<string> _files = [
+    "_1.png", 
+    "_2.png", 
+    "_3.png"
+];
+
+List<Png> images = [];
+
+foreach (string s in _files)
+    images.Add(new Png(s));
+
+Png firstImg;
+
+firstImg = images[0];
+images = images[1..];
+
+firstImg.DefaultDelayInSeconds = 1;
+firstImg.StripDecoration = true;
+
+foreach (Png image in images)
+    firstImg.AddFrame(image);
+
+firstImg.Save("apng.png");
+
 //var a = new Png(@"H:\Projects\pebble-rorschach-v3\resources\images\M10M1_2.png");
 //using var _12 = a.Unlock(out Image img, 27);
 
@@ -155,8 +179,8 @@ foreach (string file in files)
         using var _2 = targetPng.Unlock(out Image target);
 
         for (int y = 0; y < source.Height; y++)
-        for (int x = 0; x < source.Width; x++)
-            target.SetPixel(x, y, source[x, y]);
+            for (int x = 0; x < source.Width; x++)
+                target.SetPixel(x, y, source[x, y]);
     }
     targetPng.Save(file.Replace("#", "~"));
     File.Delete(file);
