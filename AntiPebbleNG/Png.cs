@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace AntiPebbleNG;
 
@@ -13,7 +15,7 @@ public class Png
 
     private static readonly byte[] Signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
-    private List<AbstractChunk> _chunks = [];
+    public List<AbstractChunk> _chunks = [];
 
     public float DefaultDelayInSeconds
     {
@@ -23,6 +25,7 @@ public class Png
 
     public uint Width { get; private set; }
     public uint Height { get; private set; }
+    public bool Interlaced { get; private set; }
     public byte BitDepth { get; private set; }
     public ColorType ColorType { get; private set; }
     public ColorRgba8[] Palette { get; private set; } = null!;//Is set from Init()
@@ -58,7 +61,7 @@ public class Png
     {
         if (palette == null && colorType == ColorType.IndexedColor)
             throw new ArgumentException("IndexedColor set, but no palette provided", nameof(palette));
-        if (1 << (bitDepth - 1) < (palette?.Length ?? 0))
+        if (1 << (bitDepth) < (palette?.Length ?? 0))
             throw new ArgumentException($"palette length {palette!.Length} is too big for bitDepth {bitDepth} ({1 << (bitDepth - 1)} possible values)", nameof(bitDepth));
 
         Png png = new();
@@ -92,13 +95,36 @@ public class Png
 
         IColor iColor = fillColor.ConvertTo(colorType, bitDepth, palette!);
 
-        Image image = Image.Create(width, height, new byte[Marshal.SizeOf(iColor) * width * height], bitDepth, colorType, palette!);
-        for (int y = 0; y < image.Height; y++)
-            for (int x = 0; x < image.Width; x++)
-                image[x, y] = iColor;
+        int size = Marshal.SizeOf(iColor);
+
+        Image image;
+
+        if (colorType != ColorType.IndexedColor)
+        {
+            image = Image.Create(width, height, new byte[size * width * height], bitDepth, colorType, palette!);
+            for (int y = 0; y < image.Height; y++)
+                for (int x = 0; x < image.Width; x++)
+                    image.SetPixel(x, y, iColor);
+        }
+        else
+        {
+            Image<ColorIndexByte> indexImage = new(width, height, new byte[width * height], [], ColorType.IndexedColor, bitDepth);
+
+            Dictionary<ColorRgba8, int> reversePallet = palette!.Select((c, i) => (c, i)).ToDictionary(x => x.c, x => x.i);
+
+            ColorRgba8 color = (ColorRgba8)fillColor.ConvertTo(ColorType.TruecolorWithAlpha, 8, []);
+
+            var index = new ColorIndexByte((byte)reversePallet[color]);
+
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                    indexImage.SetPixel(x, y, index);
+
+            image = indexImage;
+        }
 
         byte[] byteData = image.GetBytes();
-        png._chunks.Add(new IdatChunk { ImageData = PngIdatCodec.EncodeIdat(byteData, width, height, bitDepth, colorType) });
+        png._chunks.Add(new IdatChunk { ImageData = PngIdatCodec.EncodeIdat(byteData, width, height, bitDepth, colorType, false) });
         png._chunks.Add(new IendChunk());
 
         png.Init();
@@ -115,6 +141,7 @@ public class Png
         Height = ihdr.Height;
         BitDepth = ihdr.BitDepth;
         ColorType = ihdr.ColorType;
+        Interlaced = ihdr.InterlaceMethod == 1;
 
         if (!Enum.IsDefined(typeof(ColorType), ColorType))
             throw new FormatException("PNG with unknown ColorType.");
@@ -370,26 +397,46 @@ public class Png
         });
 
         //TODO: convert Image to same Format as main Image
-        _chunks.Add(new FdatChunk { ImageData = PngIdatCodec.EncodeIdat(image.GetBytes(), image.Width, image.Height, image.BitDepth, image.ColorType) });
+        _chunks.Add(new FdatChunk { ImageData = PngIdatCodec.EncodeIdat(image.GetBytes(), image.Width, image.Height, image.BitDepth, image.ColorType, Interlaced) });
     }
 
-    private readonly HashSet<uint> _unlockedImages = [];
+    private readonly HashSet<int> _unlockedImages = [];
 
-    public IDisposable Unlock(out Image image, uint frameNr = 0)
+    public IDisposable Unlock(out Image image, int frameNr = 0)
     {
         if (!_unlockedImages.Add(frameNr))
             throw new InvalidOperationException("Already unlocked");
         IImageDataCunk idat = _chunks.OfType<IImageDataCunk>().Skip((int)frameNr).First();
         IImageMetadataCunk ihdr = _chunks.TakeWhile(x => x != idat).OfType<IImageMetadataCunk>().Last();
-        byte[] pixelData = PngIdatCodec.DecodeIdat(idat.ImageData, ihdr.Width, ihdr.Height, BitDepth, ColorType);
+        byte[] pixelData = PngIdatCodec.DecodeIdat(idat.ImageData, ihdr.Width, ihdr.Height, BitDepth, ColorType, Interlaced);
         Image cachedImage = image = Image.Create(ihdr.Width, ihdr.Height, pixelData, BitDepth, ColorType, Palette);
+        GamaChunk? gama = _chunks.FirstOrDefault<GamaChunk>();
+        if (gama != null && gama.Gamma != 100000 && gama.Gamma != 0)
+            PngGamma.ApplyGamma(image, BitDepth, gama.Gamma);
         return new DisposableAction(() => Lock(cachedImage, frameNr));
     }
 
-    private void Lock(Image image, uint frameNr)
+    private void Lock(Image image, int frameNr)
     {
-        IImageDataCunk idat = _chunks.OfType<IImageDataCunk>().Skip((int)frameNr).First();
-        idat.ImageData = PngIdatCodec.EncodeIdat(image.GetBytes(), image.Width, image.Height, image.BitDepth, image.ColorType);
+        IImageDataCunk idat = _chunks.OfType<IImageDataCunk>().Skip(frameNr).First();
+
+        if (ColorType == ColorType.IndexedColor)
+        {
+            Image<ColorIndexByte> indexImage = new(Width, Height, new byte[Width * Height], [], ColorType.IndexedColor, BitDepth);
+
+            Dictionary<ColorRgba8, int> reversePallet = Palette.Select((c, i) => (c, i)).ToDictionary(x => x.c, x => x.i);
+
+            for (int y = 0; y < Height; y++)
+                for (int x = 0; x < Width; x++)
+                {
+                    byte value = (byte)reversePallet[Palette.GetClosestColor((ColorRgba8)image.GetPixel(x, y))];
+                    indexImage.SetPixel(x, y, new ColorIndexByte(value));
+                }
+
+            image = indexImage;
+        }
+
+        idat.ImageData = PngIdatCodec.EncodeIdat(image.GetBytes(), image.Width, image.Height, image.BitDepth, image.ColorType, Interlaced);
         _unlockedImages.Remove(frameNr);
     }
 

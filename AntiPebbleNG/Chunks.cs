@@ -24,7 +24,7 @@ public class PlteChunk : AbstractChunk
     public PalletColor[] Colors = null!;
 }
 
-public struct PalletColor : IColor
+public struct PalletColor
 {
     public byte R;
     public byte G;
@@ -111,6 +111,12 @@ public class TrnsChunk : AbstractChunk
 public class BkgdChunk : AbstractChunk
 {
     public byte[] ColorData = null!;
+}
+
+[Chunk("gAMA")]
+public class GamaChunk : AbstractChunk
+{
+    public uint Gamma;
 }
 
 public class UnknownChunk : AbstractChunk

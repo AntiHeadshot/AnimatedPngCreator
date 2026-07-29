@@ -60,7 +60,7 @@ class PngSuiteTests
 
     private const string SuitePath = "PngSuite-2017jul19";
 
-    //[TestCaseSource(typeof(PngSuiteTests), nameof(PngSuiteFilesInterlaced))]
+    [TestCaseSource(typeof(PngSuiteTests), nameof(PngSuiteFilesInterlaced))]
     [TestCaseSource(typeof(PngSuiteTests), nameof(PngSuiteFiles))]
     public void PngSuite_File_ShouldRoundtripCorrectly(string name)
     {
@@ -71,34 +71,37 @@ class PngSuiteTests
             var png = new Png(file);
 
             exceptionInPng = 1;
+            Image image;
 
-            using (var _ = png.Unlock(out Image image))
-            {
+            using (_ = png.Unlock(out image)) { }
 
-            }
+            exceptionInPng = 2;
+            using var original = new Bitmap(file);
+
+            AreEqual(original, image, name);
 
             byte[] encoded = png.Save();
 
-            exceptionInPng = 2;
+            exceptionInPng = 3;
 
             using var ms = new MemoryStream(encoded);
 
             using var roundtrip = new Bitmap(ms);
 
-            using var original = new Bitmap(file);
-
-            exceptionInPng = 3;
+            exceptionInPng = 4;
 
             AreEqual(original, roundtrip, name);
         }
         catch (Exception exp)
         {
             if (exceptionInPng == 1)
-                Assert.Fail("Exception in Png.Unlock().");
+                Assert.Fail("Exception in Png.Unlock(). " + exp.Message);
             else if (exceptionInPng == 2)
-                Assert.Fail("Exception in System.Drawing, but not in Png.");
+                ;
             else if (exceptionInPng == 3)
-                Assert.Fail(exp.Message);
+                Assert.Fail("Exception in System.Drawing, but not in Png. " + exp.Message);
+            else if (exceptionInPng == 4)
+                ;
             else
                 try
                 {
@@ -116,7 +119,7 @@ class PngSuiteTests
     {
         if (expected.Width != actual.Width || expected.Height != actual.Height)
         {
-            throw new Exception(
+            Assert.Fail(
                 $"PNG‑Suite test failed for '{name}'\n" +
                 $"{PngSuiteInfo.Describe(name)}\n\n" +
                 $"Image size mismatch:\n" +
@@ -134,13 +137,47 @@ class PngSuiteTests
 
                 if (e.ToArgb() != a.ToArgb())
                 {
-                    throw new Exception(
+                    Assert.Fail(
                         $"PNG‑Suite test failed for '{name}'\n" +
                         $"{PngSuiteInfo.Describe(name)}\n\n" +
                         $"Pixel mismatch at ({x},{y}):\n" +
                         $"  Expected: ARGB {e.ToArgb():X8} ({e})\n" +
-                        $"  Actual:   ARGB {a.ToArgb():X8} ({a})\n\n" +
-                        $"This test checks: {PngSuiteInfo.Describe(name)}"
+                        $"  Actual:   ARGB {a.ToArgb():X8} ({a})\n\n"
+                    );
+                }
+            }
+        }
+    }
+
+    private static void AreEqual(Bitmap expected, Image actual, string name)
+    {
+        if (expected.Width != actual.Width || expected.Height != actual.Height)
+        {
+            Assert.Fail(
+                $"PNG‑Suite test failed for '{name}'\n" +
+                $"{PngSuiteInfo.Describe(name)}\n\n" +
+                $"Read Image size mismatch:\n" +
+                $"  Expected: {expected.Width}×{expected.Height}\n" +
+                $"  Actual:   {actual.Width}×{actual.Height}"
+            );
+        }
+
+        for (int y = 0; y < expected.Height; y++)
+        {
+            for (int x = 0; x < expected.Width; x++)
+            {
+                var e = expected.GetPixel(x, y);
+                var a = actual.GetPixel(x, y);
+                
+                ColorRgba8 rgba = (ColorRgba8)a.ConvertTo(ColorType.TruecolorWithAlpha, 8, []);
+                if (e.ToArgb() != rgba.ToArgb())
+                {
+                    Assert.Fail(
+                        $"PNG‑Suite test failed for '{name}'\n" +
+                        $"{PngSuiteInfo.Describe(name)}\n\n" +
+                        $"Read Pixel mismatch at ({x},{y}):\n" +
+                        $"  Expected: ARGB {e.ToArgb():X8} ({e})\n" +
+                        $"  Actual:   ARGB {rgba.ToArgb():X8} ({a})\n\n"
                     );
                 }
             }
@@ -157,7 +194,11 @@ public static class PngSuiteInfo
         return prefix switch
         {
             "bas" => "Basic format test — verifies core PNG decoding.",
-            "bg" => "Background color test — checks bKGD handling.",
+            "bga" => "Background color test No background — checks bKGD handling",
+            "bgw" => "Background color test White background — checks bKGD handling",
+            "bgg" => "Background color test Gray background — checks bKGD handling",
+            "bgb" => "Background color test Black background — checks bKGD handling",
+            "bgy" => "Background color test Yellow background — checks bKGD handling",
             "ccw" => "Chromaticity test — validates cHRM chunk.",
             "cdf" => "Physical pixel dimensions — pHYs chunk (flat pixels).",
             "cdh" => "Physical pixel dimensions — pHYs chunk (tall pixels).",
@@ -214,6 +255,7 @@ public static class PngSuiteInfo
             "tbb" => "Transparency — transparent + black background.",
             "tbg" => "Transparency — transparent + gray background.",
             "tbw" => "Transparency — transparent + white background.",
+            "tbr" => "Transparency — transparent + red background.",
             "tby" => "Transparency — transparent + yellow background.",
             "tm3" => "Transparency — multiple transparency levels.",
             "tp0" => "Transparency — not transparent (reference).",

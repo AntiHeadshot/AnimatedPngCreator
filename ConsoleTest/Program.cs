@@ -1,6 +1,19 @@
-﻿using System.Dynamic;
-using AntiPebbleNG;
+﻿using AntiPebbleNG;
+using System.Dynamic;
 using System.Text.RegularExpressions;
+
+//var a = new Png(@"H:\Projects\pebble-rorschach-v3\resources\images\M10M1_2.png");
+//using var _12 = a.Unlock(out Image img, 27);
+
+//var targetPng = Png.Create(a.Width, a.Height, a.ColorType, a.BitDepth, a.Palette, img.GetPixel(0,0));
+//{
+//    using var _2 = targetPng.Unlock(out Image target);
+
+//    for (int y = 0; y < img.Height; y++)
+//        for (int x = 0; x < img.Width; x++)
+//            target.SetPixel(x, y, img[x, y]);
+//}
+//targetPng.Save("FRAME_M44.png");
 
 //(string name, Regex regex, bool withBlank)[] patterns = [
 //    ("H10H1M10M1", new Regex(@"\d+_\d+_\d+_\d+"), false),
@@ -50,78 +63,101 @@ using System.Text.RegularExpressions;
 //    foreach (Png image in images)
 //        firstImg.AddFrame(image);
 
-//    firstImg.Save(group.Key + ".png");
+//    firstImg.Save(@"H:\Projects\pebble-rorschach-v3\resources\images\" + group.Key + ".png");
 
 //    foreach (Png image in images)
 //    {
 //        using IDisposable _ = image.Unlock(out Image pixels);
 //        pixels.FlipVertical();
 //    }
+//    {
+//        using IDisposable _ = firstImg.Unlock(out Image pixels);
+//        pixels.FlipVertical();
+//    }
 
-//    firstImg.Save("I" + group.Key + ".png");
+//    firstImg.Save(@"H:\Projects\pebble-rorschach-v3\resources\images\I" + group.Key + ".png");
 //}
 
-//File.WriteAllLines("defines.h", defines);
+//File.WriteAllLines(@"H:\Projects\pebble-rorschach-v3\resources\images\defines.h", defines);
 
-string[] files =
-[
-    @"H:\Projects\pebble-tattoo\resources\images\0h.png",
-    @"H:\Projects\pebble-tattoo\resources\images\0h1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\0m1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\0m10.png",
-    @"H:\Projects\pebble-tattoo\resources\images\1h.png",
-    @"H:\Projects\pebble-tattoo\resources\images\1h1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\1h10.png",
-    @"H:\Projects\pebble-tattoo\resources\images\1m1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\1m10.png",
-    @"H:\Projects\pebble-tattoo\resources\images\2h.png",
-    @"H:\Projects\pebble-tattoo\resources\images\2h1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\2h10.png",
-    @"H:\Projects\pebble-tattoo\resources\images\2m1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\2m10.png",
-    @"H:\Projects\pebble-tattoo\resources\images\3h.png",
-    @"H:\Projects\pebble-tattoo\resources\images\3h1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\3m1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\3m10.png",
-    @"H:\Projects\pebble-tattoo\resources\images\4h.png",
-    @"H:\Projects\pebble-tattoo\resources\images\4h1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\4m1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\4m10.png",
-    @"H:\Projects\pebble-tattoo\resources\images\5h.png",
-    @"H:\Projects\pebble-tattoo\resources\images\5h1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\5m1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\5m10.png",
-    @"H:\Projects\pebble-tattoo\resources\images\6h.png",
-    @"H:\Projects\pebble-tattoo\resources\images\6h1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\6m1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\7h.png",
-    @"H:\Projects\pebble-tattoo\resources\images\7h1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\7m1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\8h.png",
-    @"H:\Projects\pebble-tattoo\resources\images\8h1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\8m1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\9h.png",
-    @"H:\Projects\pebble-tattoo\resources\images\9h1.png",
-    @"H:\Projects\pebble-tattoo\resources\images\9m1.png"
-];
+string[] files = Directory.GetFiles(@"H:\Projects\pebble-tattoo\resources\images").Where(x => x.EndsWith("#emery.png") || x.EndsWith("#gabbro.png")).ToArray();
 
 foreach (string file in files)
 {
     var png = new Png(file);
-    var targetPng = Png.Create(png.Width, png.Height, ColorType.IndexedColor, 4, [
-        new ColorRgba8(0, 0, 0, 0),
-        new ColorRgba8(0, 0, 0, 255),
-        new ColorRgba8(0x55, 0x55, 0x55, 255),
-        new ColorRgba8(0xAA, 0xAA, 0xAA, 255),
-        new ColorRgba8(0xFF, 0xFF, 0xFF, 255),
-    ], new ColorIndexed4(0));
+
+    ColorRgba8[] grayPallet =
+    [
+        new(0, 0, 0, 0),
+        new(0, 0, 0, 255),
+        new(0x55, 0x55, 0x55, 255),
+        new(0xAA, 0xAA, 0xAA, 255),
+        new(0xFF, 0xFF, 0xFF, 255),
+    ];
+
+    var targetPng = Png.Create(png.Width, png.Height, ColorType.IndexedColor, 4, grayPallet, grayPallet[1]);
     {
         using var _1 = png.Unlock(out Image source);
         using var _2 = targetPng.Unlock(out Image target);
 
         for (int y = 0; y < source.Height; y++)
             for (int x = 0; x < source.Width; x++)
-                target[x, y] = source[x, y];
+                target.SetPixel(x, y, source[x, y]);
     }
-    targetPng.Save(file);
+    targetPng.Save(file.Replace("#", "~"));
+    File.Delete(file);
+}
+
+files = Directory.GetFiles(@"H:\Projects\pebble-tattoo\resources\images").Where(x => x.EndsWith("#basalt.png") || x.EndsWith("#chalk.png")).ToArray();
+
+foreach (string file in files)
+{
+    var png = new Png(file);
+
+    ColorRgba8[] grayPallet =
+    [
+        new(0, 0, 0, 0),
+        new(0, 0, 0, 255),
+        new(0x55, 0x55, 0x55, 255),
+        new(0xAA, 0xAA, 0xAA, 255),
+        new(0xFF, 0xFF, 0xFF, 255),
+    ];
+
+    var targetPng = Png.Create(png.Width, png.Height, ColorType.IndexedColor, 4, grayPallet, grayPallet[1]);
+    {
+        using var _1 = png.Unlock(out Image source);
+        using var _2 = targetPng.Unlock(out Image target);
+
+        for (int y = 0; y < source.Height; y++)
+            for (int x = 0; x < source.Width; x++)
+                target.SetPixel(x, y, source[x, y]);
+    }
+    targetPng.Save(file.Replace("#", "~"));
+    File.Delete(file);
+}
+
+files = Directory.GetFiles(@"H:\Projects\pebble-tattoo\resources\images").Where(x => x.EndsWith("#bw.png")).ToArray();
+
+foreach (string file in files)
+{
+    var png = new Png(file);
+
+    ColorRgba8[] grayPallet =
+    [
+        new(0, 0, 0, 0),
+        new(0, 0, 0, 255),
+        new(0xFF, 0xFF, 0xFF, 255),
+    ];
+
+    var targetPng = Png.Create(png.Width, png.Height, ColorType.IndexedColor, 2, grayPallet, grayPallet[1]);
+    {
+        using var _1 = png.Unlock(out Image source);
+        using var _2 = targetPng.Unlock(out Image target);
+
+        for (int y = 0; y < source.Height; y++)
+        for (int x = 0; x < source.Width; x++)
+            target.SetPixel(x, y, source[x, y]);
+    }
+    targetPng.Save(file.Replace("#", "~"));
+    File.Delete(file);
 }

@@ -1,5 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Dynamic;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
@@ -14,11 +17,7 @@ public abstract class Image(in uint width, in uint height, ColorType colorType, 
     public readonly byte BitDepth = bitDepth;
     public readonly ColorRgba8[] Palette = palette;
 
-    public IColor this[int x, int y]
-    {
-        get => GetPixel(x, y);
-        set => SetPixel(x, y, value);
-    }
+    public IColor this[int x, int y] => GetPixel(x, y);
 
     public abstract IColor GetPixel(int x, int y);
     public abstract void SetPixel(int x, int y, IColor color);
@@ -32,8 +31,8 @@ public abstract class Image(in uint width, in uint height, ColorType colorType, 
                 IColor cLeft = this[left, y];
                 IColor cRight = this[right, y];
 
-                this[left, y] = cRight;
-                this[right, y] = cLeft;
+                SetPixel(left, y, cRight);
+                SetPixel(right, y, cLeft);
             }
     }
 
@@ -45,8 +44,8 @@ public abstract class Image(in uint width, in uint height, ColorType colorType, 
                 IColor cTop = this[x, top];
                 IColor cBottom = this[x, bottom];
 
-                this[x, top] = cBottom;
-                this[x, bottom] = cTop;
+                SetPixel(x, top, cBottom);
+                SetPixel(x, bottom, cTop);
             }
     }
 
@@ -56,11 +55,23 @@ public abstract class Image(in uint width, in uint height, ColorType colorType, 
             || !byBitDepth.TryGetValue(bitDepth, out Type type))
             throw new ArgumentOutOfRangeException(nameof(bitDepth), bitDepth, null);
         Type imageType = typeof(Image<>).MakeGenericType(type);
-        return (Image)Activator.CreateInstance(imageType, width, height, data, palette);
+        Image image = (Image)Activator.CreateInstance(imageType, width, height, data, palette, colorType, bitDepth);
+
+        if (colorType == ColorType.IndexedColor)
+        {
+            Image colorImage = new Image<ColorRgba8>(width, height, new byte[data.Length * 4], [], ColorType.TruecolorWithAlpha, 8);
+
+            for (int y = 0; y < image.Height; y++)
+                for (int x = 0; x < image.Width; x++)
+                    colorImage.SetPixel(x, y, palette[((ColorIndexByte)image[x, y]).Value]);
+            image = colorImage;
+        }
+
+        return image;
     }
 }
 
-public class Image<TColor>(uint width, uint height, byte[] data, ColorRgba8[] palette) : Image(width, height, typeof(TColor).GetCustomAttribute<ColorAttribute>().ColorType, typeof(TColor).GetCustomAttribute<ColorAttribute>().BitDepth, palette)
+public class Image<TColor>(uint width, uint height, byte[] data, ColorRgba8[] palette, ColorType colorType, byte bitDepth) : Image(width, height, colorType, bitDepth, palette)
     where TColor : struct, IColor
 {
     private readonly TColor[] _data = MemoryMarshal.Cast<byte, TColor>(data).ToArray();

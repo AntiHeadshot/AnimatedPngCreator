@@ -11,11 +11,7 @@ public sealed class DisposableAction(Action dispose) : IDisposable
         if (!disposing || _dispose == null)
             return;
 
-        try { _dispose(); }
-        catch (Exception)
-        {
-            /* ignored */
-        }
+        _dispose();
 
         _dispose = null;
     }

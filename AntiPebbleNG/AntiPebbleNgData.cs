@@ -12,6 +12,6 @@ internal static class AntiPebbleNgData
         .ToDictionary(x => x.Item2.Name, x => x.x);
 
     internal static readonly Dictionary<ColorType, Dictionary<byte, Type>> ColorByConfiguration = typeof(IColor).Assembly.GetTypes()
-        .Select(x => (x, x.GetCustomAttribute<ColorAttribute>())).Where(x => x.Item2 != null)
-        .GroupBy(x => x.Item2.ColorType).ToDictionary(x => x.Key, x => x.ToDictionary(y => y.Item2.BitDepth, y => y.x));
+        .SelectMany(x => x.GetCustomAttributes<ColorAttribute>().Select(a => (x, a))).Where(x => x.a != null)
+        .GroupBy(x => x.a.ColorType).ToDictionary(x => x.Key, x => x.ToDictionary(y => y.a.BitDepth, y => y.x));
 }
